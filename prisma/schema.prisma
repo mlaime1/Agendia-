@@ -1,29 +1,25 @@
 generator client {
   provider = "prisma-client-js"
-  engine = "binary"
+  engine   = "binary"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-enum trip_type_enum {
-  ida
-  ida_y_vuelta @map("ida y vuelta")
-  especial
-}
-
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model clients {
-  id            BigInt      @id(map: "cliente_pkey") @default(autoincrement())
-  created_at    DateTime    @default(now()) @db.Timestamptz(6)
-  nombre        String      @db.VarChar
-  phone         Decimal     @db.Decimal
-  billing_cycle String      @db.VarChar
-  rates         rates[]
-  routes        routes[]
-  summaries     summaries[]
-  trips         trips[]
+  id                 BigInt      @id(map: "cliente_pkey") @default(autoincrement())
+  created_at         DateTime    @default(now()) @db.Timestamptz(6)
+  nombre             String      @db.VarChar
+  phone              Decimal     @db.Decimal
+  billing_cycle      String      @db.VarChar
+  billing_day        Int?
+  billing_start_date DateTime?   @db.Date
+  rates              rates[]
+  routes             routes[]
+  summaries          summaries[]
+  trips              trips[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -87,25 +83,25 @@ model summaries {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model trips {
-  id               BigInt     @id @default(autoincrement())
-  created_at       DateTime   @default(now()) @db.Timestamptz(6)
+  id               BigInt         @id @default(autoincrement())
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
   user_id          BigInt
   client_id        BigInt
   route_id         BigInt
   rate_id          BigInt
-  trip_date        DateTime   @db.Timestamp(6)
+  trip_date        DateTime       @db.Timestamp(6)
   trip_type        trip_type_enum
-  final_price      Decimal    @db.Decimal
-  has_surcharge    Boolean    @default(false)
-  surcharge_reason String?    @db.VarChar
-  special_type     String?    @db.VarChar
-  notes            String?    @db.VarChar
+  final_price      Decimal        @db.Decimal
+  has_surcharge    Boolean        @default(false)
+  surcharge_reason String?        @db.VarChar
+  special_type     String?        @db.VarChar
+  notes            String?        @db.VarChar
   summary_id       BigInt?
-  clients          clients    @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  rates            rates      @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  routes           routes     @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  summaries        summaries? @relation(fields: [summary_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users            users      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clients          clients        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rates            rates          @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  routes           routes         @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  summaries        summaries?     @relation(fields: [summary_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users            users          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -117,4 +113,10 @@ model users {
   alias      String?     @db.VarChar
   summaries  summaries[]
   trips      trips[]
+}
+
+enum trip_type_enum {
+  ida
+  ida_y_vuelta @map("ida y vuelta")
+  especial
 }
