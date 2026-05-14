@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import clienteRoutes from '../modules/clients/routes';
+import clientsRoutes from '../modules/clients/routes';
 import recorridoRoutes from '../modules/recorrido/routes';
 import paradaRoutes from '../modules/parada/routes';
 import usersRoutes from '../modules/users/routes';
@@ -14,9 +14,9 @@ router.get('/health', (_req, res) => {
 });
 
 /* 
-router.use('/clientes', clienteRoutes);
 router.use('/recorridos', recorridoRoutes);
 router.use('/paradas', paradaRoutes); */
+router.use('/clients', clientsRoutes);
 router.use('/auth', authRoutes)
 router.use('/users', usersRoutes);
 router.use('/trips', tripRoutes);
