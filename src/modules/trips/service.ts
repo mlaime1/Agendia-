@@ -18,6 +18,40 @@ function normalizeTripType(tripType: CreateTripDto['trip_type']): 'ida' | 'ida_y
   throw new AppError('trip_type must be "ida", "ida y vuelta", "especial", or boolean', 400);
 }
 
+// Check if string is a UUID (Supabase auth_id format)
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
+// Normalize user_id: if UUID, lookup in users table; if number, convert to BigInt
+async function normalizeUserId(userIdStr: string): Promise<bigint> {
+  // If it's a UUID, look it up in the users table by auth_id
+  if (isUUID(userIdStr)) {
+    const user = await prisma.users.findUnique({
+      where: { auth_id: userIdStr },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new AppError(
+        `User with auth_id "${userIdStr}" not found. Create the user first.`,
+        404
+      );
+    }
+    return user.id;
+  }
+
+  // Otherwise, try to parse as BigInt
+  try {
+    return BigInt(userIdStr);
+  } catch (error) {
+    throw new AppError(
+      `user_id must be a valid UUID or number, got "${userIdStr}"`,
+      400
+    );
+  }
+}
+
 export const tripService = {
 
   async getAll() {
@@ -54,9 +88,12 @@ export const tripService = {
   },
 
   async create(data: CreateTripDto) {
+    // Normalize user_id: handles UUID lookup and BigInt conversion
+    const user_id = await normalizeUserId(data.user_id);
+
     return prisma.trips.create({
       data: {
-        user_id:    BigInt(data.user_id),
+        user_id,
         client_id:  BigInt(data.client_id),
         route_id:   BigInt(data.route_id),
         rate_id:    BigInt(data.rate_id),
