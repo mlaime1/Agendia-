@@ -90,7 +90,7 @@ model trips {
   user_id          BigInt
   client_id        BigInt
   route_id         BigInt
-  rate_id          BigInt
+  rate_id          BigInt?
   trip_date        DateTime       @db.Timestamp(6)
   trip_type        trip_type_enum
   final_price      Decimal        @db.Decimal
@@ -100,7 +100,7 @@ model trips {
   notes            String?        @db.VarChar
   summary_id       BigInt?
   clients          clients        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  rates            rates          @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rates            rates?         @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   routes           routes         @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   summaries        summaries?     @relation(fields: [summary_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users            users          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
