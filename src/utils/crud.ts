@@ -5,11 +5,11 @@ import { asyncHandler } from './asyncHandler';
 
 export type CrudModelName = 'usuario' | 'cliente' | 'recorrido' | 'parada' | 'tarifa' | 'viaje';
 
-export interface CrudService {
+export interface CrudService<CreateData = Record<string, unknown>, UpdateData = CreateData> {
   list: () => Promise<unknown[]>;
   getById: (id: string) => Promise<unknown>;
-  create: (data: Record<string, unknown>) => Promise<unknown>;
-  update: (id: string, data: Record<string, unknown>) => Promise<unknown>;
+  create: (data: CreateData) => Promise<unknown>;
+  update: (id: string, data: UpdateData) => Promise<unknown>;
   remove: (id: string) => Promise<unknown>;
 }
 
@@ -46,13 +46,13 @@ export const createCrudService = (modelName: CrudModelName): CrudService => {
 
       return record;
     },
-    create: async (data) => model().create({ data }),
-    update: async (id, data) => model().update({ where: { id: normalizeId(id) }, data }),
+    create: async (data) => model().create({ data: data as Record<string, unknown> }),
+    update: async (id, data) => model().update({ where: { id: normalizeId(id) }, data: data as Record<string, unknown> }),
     remove: async (id) => model().delete({ where: { id: normalizeId(id) } }),
   };
 };
 
-export const createCrudController = (service: CrudService) => {
+export const createCrudController = <CreateData = Record<string, unknown>, UpdateData = CreateData>(service: CrudService<CreateData, UpdateData>) => {
   const list = asyncHandler(async (_req: Request, res: Response, _next: NextFunction) => {
     const items = await service.list();
     res.status(200).json({ success: true, data: items });
@@ -64,12 +64,12 @@ export const createCrudController = (service: CrudService) => {
   });
 
   const create = asyncHandler(async (req: Request, res: Response) => {
-    const item = await service.create(req.body as Record<string, unknown>);
+    const item = await service.create(req.body as CreateData);
     res.status(201).json({ success: true, data: item });
   });
 
   const update = asyncHandler(async (req: Request<{ id: string }>, res: Response) => {
-    const item = await service.update(req.params.id, req.body as Record<string, unknown>);
+    const item = await service.update(req.params.id, req.body as UpdateData);
     res.status(200).json({ success: true, data: item });
   });
 

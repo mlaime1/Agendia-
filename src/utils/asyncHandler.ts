@@ -1,9 +1,25 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import type {
+  NextFunction,
+  ParamsDictionary,
+  RequestHandler,
+} from 'express-serve-static-core';
 
-type AsyncController = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+type AsyncController<
+  P = ParamsDictionary,
+  ResBody = unknown,
+  ReqBody = unknown,
+  ReqQuery = unknown,
+  LocalsObj extends Record<string, unknown> = Record<string, unknown>,
+> = RequestHandler<P, ResBody, ReqBody, ReqQuery, LocalsObj>;
 
-export const asyncHandler = (handler: AsyncController): RequestHandler => {
-  return (req, res, next) => {
-    void handler(req, res, next).catch(next);
+export const asyncHandler = <
+  P = ParamsDictionary,
+  ResBody = unknown,
+  ReqBody = unknown,
+  ReqQuery = unknown,
+  LocalsObj extends Record<string, unknown> = Record<string, unknown>,
+>(handler: AsyncController<P, ResBody, ReqBody, ReqQuery, LocalsObj>): RequestHandler<P, ResBody, ReqBody, ReqQuery, LocalsObj> => {
+  return (req, res, next: NextFunction) => {
+    void Promise.resolve(handler(req, res, next)).catch(next);
   };
 };
