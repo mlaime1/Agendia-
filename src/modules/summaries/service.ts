@@ -8,6 +8,16 @@ import {
 import { calculateBillingPeriod } from './billingPeriod'
 
  
+const normalizeBillingCycle = (value: string): string => {
+  const map: Record<string, string> = {
+    mensual: 'monthly',
+    semanal: 'weekly',
+    quincenal: 'biweekly',
+  }
+
+  return map[value.toLowerCase()] ?? value
+}
+
 
 const summaryInclude = {
   clients: true,
@@ -123,9 +133,11 @@ export const createSummaryAuto = async (
     ? new Date(dto.reference_date)
     : new Date()
 
+  const normalizedCycle = normalizeBillingCycle(client.billing_cycle)
+
   const { period_start, period_end, period_type } = calculateBillingPeriod(
     {
-      billing_cycle: client.billing_cycle,
+      billing_cycle: normalizedCycle,
       billing_day: client.billing_day,
       billing_start_date: client.billing_start_date,
     },

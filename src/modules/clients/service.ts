@@ -9,6 +9,16 @@ const clientInclude = {
   },
 }
 
+const normalizeBillingCycle = (value: string): string => {
+  const map: Record<string, string> = {
+    mensual: 'monthly',
+    semanal: 'weekly',
+    quincenal: 'biweekly',
+  }
+
+  return map[value.toLowerCase()] ?? value
+}
+
 // ─── Validaciones de billing ──────────────────────────────────────────────────
 
 const validateBillingConfig = (
@@ -16,7 +26,9 @@ const validateBillingConfig = (
   billing_day?: number | null,
   billing_start_date?: string | null
 ) => {
-  if (billing_cycle === 'weekly') {
+  const cycle = normalizeBillingCycle(billing_cycle)
+
+  if (cycle === 'weekly') {
     if (billing_day == null) {
       throw new Error('billing_day es requerido para ciclo semanal (1=lun … 7=dom)')
     }
@@ -25,13 +37,13 @@ const validateBillingConfig = (
     }
   }
 
-  if (billing_cycle === 'biweekly') {
+  if (cycle === 'biweekly') {
     if (!billing_start_date) {
       throw new Error('billing_start_date es requerido para ciclo quincenal')
     }
   }
 
-  if (billing_cycle === 'monthly') {
+  if (cycle === 'monthly') {
     if (billing_day == null) {
       throw new Error('billing_day es requerido para ciclo mensual (día del mes: 1-31)')
     }
@@ -102,16 +114,18 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
 // Endpoint dedicado para el panel de configuración de facturación
 
 export const updateBillingConfig = async (id: string, dto: UpdateBillingConfigDTO) => {
-  validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
+  const cycle = normalizeBillingCycle(dto.billing_cycle)
+
+  validateBillingConfig(cycle, dto.billing_day, dto.billing_start_date)
 
   return prisma.clients.update({
     where: { id: BigInt(id) },
     data: {
-      billing_cycle: dto.billing_cycle,
+      billing_cycle: cycle,
       billing_day: dto.billing_day ?? null,
       // Al cambiar el ciclo, limpiar billing_start_date si no aplica
       billing_start_date:
-        dto.billing_cycle === 'biweekly' && dto.billing_start_date
+        cycle === 'biweekly' && dto.billing_start_date
           ? new Date(dto.billing_start_date)
           : null,
     },
