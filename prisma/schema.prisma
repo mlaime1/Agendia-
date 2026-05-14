@@ -11,6 +11,7 @@ datasource db {
 model clients {
   id                 BigInt      @id(map: "cliente_pkey") @default(autoincrement())
   created_at         DateTime    @default(now()) @db.Timestamptz(6)
+  auth_id            String?     @unique @db.Text
   nombre             String      @db.VarChar
   phone              Decimal     @db.Decimal
   billing_cycle      String      @db.VarChar
@@ -108,6 +109,8 @@ model trips {
 model users {
   id         BigInt      @id(map: "user_pkey") @default(autoincrement())
   created_at DateTime    @default(now()) @db.Timestamptz(6)
+  auth_id    String?     @unique @db.Text
+  role       String      @default("driver") @db.Text
   name       String      @db.VarChar
   email      String      @db.VarChar
   alias      String?     @db.VarChar
