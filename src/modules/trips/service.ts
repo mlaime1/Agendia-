@@ -136,14 +136,14 @@ export const tripService = {
     let final_price: number;
 
     if (data.rate_id) {
-      // Use provided rate_id
+      // Use provided rate_id - allow final_price override
       rate_id = BigInt(data.rate_id);
       final_price = data.final_price ?? 0;
     } else {
-      // Auto-lookup or create rate based on client_id and trip_type
+      // Auto-lookup or create rate - always use base_price, ignore frontend's final_price
       const rateData = await findOrCreateRateForTrip(client_id, trip_type);
       rate_id = rateData.id;
-      final_price = data.final_price ?? rateData.base_price;
+      final_price = rateData.base_price; // Always from rate, never from frontend payload
     }
 
     return prisma.trips.create({
