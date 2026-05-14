@@ -52,6 +52,43 @@ async function normalizeUserId(userIdStr: string): Promise<bigint> {
   }
 }
 
+/**
+ * Find or create a flat rate for a trip based on client_id and trip_type
+ * If no rate exists, creates one with base_price = 0 (flat rate)
+ * TODO: Implement date range validation (vigencia) in future iterations
+ */
+async function findOrCreateRateForTrip(client_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
+  // Try to find existing rate
+  let rate = await prisma.rates.findFirst({
+    where: {
+      client_id,
+      trip_type: trip_type as any, // trip_type_enum
+      // TODO: Add date range filtering when vigencia is implemented
+      // start_date: { lte: tripDate }
+      // end_date: { gte: tripDate }
+    },
+    select: { id: true, base_price: true },
+  });
+
+  // If rate exists, return it
+  if (rate) {
+    return { id: rate.id, base_price: Number(rate.base_price) };
+  }
+
+  // Create a new flat rate (base_price = 0)
+  const newRate = await prisma.rates.create({
+    data: {
+      client_id,
+      trip_type: trip_type as any, // trip_type_enum
+      base_price: 0, // Flat rate
+      start_date: new Date(),
+    },
+    select: { id: true, base_price: true },
+  });
+
+  return { id: newRate.id, base_price: Number(newRate.base_price) };
+}
+
 export const tripService = {
 
   async getAll() {
@@ -90,17 +127,35 @@ export const tripService = {
   async create(data: CreateTripDto) {
     // Normalize user_id: handles UUID lookup and BigInt conversion
     const user_id = await normalizeUserId(data.user_id);
+    const client_id = BigInt(data.client_id);
+    const route_id = BigInt(data.route_id);
+    const trip_type = normalizeTripType(data.trip_type);
+
+    // Auto-lookup or create rate if not provided
+    let rate_id: bigint;
+    let final_price: number;
+
+    if (data.rate_id) {
+      // Use provided rate_id
+      rate_id = BigInt(data.rate_id);
+      final_price = data.final_price ?? 0;
+    } else {
+      // Auto-lookup or create rate based on client_id and trip_type
+      const rateData = await findOrCreateRateForTrip(client_id, trip_type);
+      rate_id = rateData.id;
+      final_price = data.final_price ?? rateData.base_price;
+    }
 
     return prisma.trips.create({
       data: {
         user_id,
-        client_id:  BigInt(data.client_id),
-        route_id:   BigInt(data.route_id),
-        rate_id:    BigInt(data.rate_id),
-        trip_date:  new Date(data.trip_date),
-        trip_type:  normalizeTripType(data.trip_type),
-        final_price: data.final_price,
-        has_surcharge:   data.has_surcharge ?? false,
+        client_id,
+        route_id,
+        rate_id,
+        trip_date: new Date(data.trip_date),
+        trip_type,
+        final_price,
+        has_surcharge: data.has_surcharge ?? false,
         surcharge_reason: data.surcharge_reason,
         special_type: data.special_type,
         notes: data.notes,
