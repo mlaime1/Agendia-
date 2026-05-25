@@ -18,7 +18,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "pdfkit": "^0.18.0",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "psql": "^0.0.1"
   },
   "devDependencies": {
     "@prisma/client": "^7.8.0",
@@ -28,6 +29,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "prisma": "^7.8.0",
+    "supabase": "^2.100.1",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2"

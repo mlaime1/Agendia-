@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express'
+import { $Enums } from '@prisma/client'
 import { supabase } from '../lib/supabase'
 import { prisma } from '../config/prisma'  // ← ajustá el path
 
 export interface AuthRequest extends Request {
   user?: {
     authId: string
-    role: 'driver' | 'admin' | 'client'
+    role: $Enums.Role | 'client'
     dbId: bigint
   }
 }
@@ -34,7 +35,7 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
   if (dbUser) {
     req.user = {
       authId: user.id,
-      role: dbUser.role as 'driver' | 'admin',
+      role: dbUser.role,
       dbId: dbUser.id
     }
     return next()

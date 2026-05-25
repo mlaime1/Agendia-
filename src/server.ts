@@ -8,8 +8,8 @@ import { env } from './config/env';
 
 const startServer = (): void => {
   app.listen(env.port, () => {
-    console.log(`Server running on port ${env.port}`);
-  });
+  console.log(`Server running on http://127.0.0.1:${env.port}`);
+});
 };
 
 startServer();

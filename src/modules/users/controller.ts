@@ -4,10 +4,10 @@ import * as usersService from './service'
 
 export async function getMe(req: AuthRequest, res: Response) {
   try {
-    const data = await usersService.getMe(req.user!.dbId)
+    const data = await usersService.getMe(req.user!.authId)
     res.status(200).json({ success: true, data })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
@@ -16,7 +16,7 @@ export async function updateMe(req: AuthRequest, res: Response) {
     const data = await usersService.updateMe(req.user!.dbId, req.body)
     res.status(200).json({ success: true, data })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
@@ -25,6 +25,6 @@ export async function getAll(req: AuthRequest, res: Response) {
     const data = await usersService.getAll()
     res.status(200).json({ success: true, data })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }

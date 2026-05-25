@@ -17,10 +17,12 @@ model clients {
   billing_day        Int?
   billing_start_date DateTime?   @db.Date
   auth_id            String?     @unique
+  driver_id          BigInt?
   rates              rates[]
   routes             routes[]
   summaries          summaries[]
   trips              trips[]
+  users              users?      @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -114,13 +116,19 @@ model users {
   email      String      @db.VarChar
   alias      String?     @db.VarChar
   auth_id    String?     @unique
-  role       String      @default("driver")
+  role       Role        @default(DRIVER)
   summaries  summaries[]
   trips      trips[]
+  clients    clients[]
 }
 
 enum trip_type_enum {
   ida
   ida_y_vuelta @map("ida y vuelta")
   especial
+}
+
+enum Role {
+  DRIVER
+  ADMIN
 }

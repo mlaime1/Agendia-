@@ -1,8 +1,15 @@
 import { supabase } from '../../lib/supabase'
+import { prisma } from '../../config/prisma'
 import { RegisterDTO, LoginDTO } from './types'
 
+function getProfileName(name: string | undefined, email: string): string {
+  const trimmed = name?.trim()
+  if (trimmed) return trimmed
+  return email.split('@')[0] || 'Sin nombre'
+}
+
 export async function register({ email, password, name, alias }: RegisterDTO) {
-  // 1. Crear cuenta en Supabase Auth (el trigger crea la fila en users automáticamente)
+  // 1. Crear cuenta en Supabase Auth
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -11,14 +18,24 @@ export async function register({ email, password, name, alias }: RegisterDTO) {
   })
 
   if (error) throw new Error(error.message)
+  if (!data.user) throw new Error('No se pudo crear el usuario en Auth')
 
-  // 2. Si tiene alias, actualizarlo (el trigger solo guarda name y email)
-  if (alias && data.user) {
-    await supabase
-      .from('users')
-      .update({ alias })
-      .eq('auth_id', data.user.id)
-  }
+  // 2. Asegurar perfil en users (fallback robusto si el trigger no está activo)
+  const profileName = getProfileName(name, email)
+  await prisma.users.upsert({
+    where: { auth_id: data.user.id },
+    update: {
+      name: profileName,
+      email,
+      ...(alias !== undefined ? { alias } : {}),
+    },
+    create: {
+      auth_id: data.user.id,
+      name: profileName,
+      email,
+      ...(alias !== undefined ? { alias } : {}),
+    },
+  })
 
   // 3. Hacer login automático para devolver la sesión
   const session = await supabase.auth.signInWithPassword({ email, password })
