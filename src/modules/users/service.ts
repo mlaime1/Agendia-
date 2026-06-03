@@ -11,14 +11,31 @@ export async function getMe(authId: string) {
       name: true,
       email: true,
       alias: true,
-      role: true
+      role: true,
     }
   })
 
   if (user) {
+    const clients = user.role === 'PASSENGER'
+      ? await prisma.client_passengers.findMany({
+          where: { user_id: user.id },
+          select: {
+            client_id: true,
+            client: { select: { nombre: true, driver_id: true } },
+          },
+        })
+      : []
+
     return {
       ...user,
-      type: user.role.toLowerCase() as 'driver' | 'admin'
+      type: user.role.toLowerCase() as 'driver' | 'admin' | 'passenger',
+      ...(clients.length > 0 ? {
+        clients: clients.map((c) => ({
+          id: c.client_id.toString(),
+          nombre: c.client.nombre,
+          driver_id: c.client.driver_id?.toString(),
+        })),
+      } : {}),
     }
   }
 
@@ -26,7 +43,7 @@ export async function getMe(authId: string) {
     where: { auth_id: authId },
     select: {
       id: true,
-      nombre: true
+      nombre: true,
     }
   })
 
@@ -34,7 +51,7 @@ export async function getMe(authId: string) {
     return {
       type: 'client' as const,
       id: client.id,
-      name: client.nombre
+      name: client.nombre,
     }
   }
 
@@ -50,7 +67,7 @@ export async function updateMe(dbId: bigint, dto: UpdateUserDTO) {
       name: true,
       email: true,
       alias: true,
-      role: true
+      role: true,
     }
   })
 }
@@ -63,7 +80,7 @@ export async function getAll() {
       name: true,
       email: true,
       alias: true,
-      role: true
+      role: true,
     },
     orderBy: { created_at: 'desc' }
   })

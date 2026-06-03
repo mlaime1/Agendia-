@@ -71,7 +71,7 @@ export const getById = async (id: string) => {
   return client
 }
 
-export const create = async (dto: CreateClientDTO) => {
+export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
   validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
 
   return prisma.clients.create({
@@ -84,6 +84,7 @@ export const create = async (dto: CreateClientDTO) => {
       billing_start_date: dto.billing_start_date
         ? new Date(dto.billing_start_date)
         : null,
+      ...(driverId && { driver_id: driverId }),
     },
   })
 }

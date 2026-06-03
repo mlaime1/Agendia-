@@ -1,7 +1,8 @@
-import { Request, Response } from 'express'
+import { Response } from 'express'
+import { AuthRequest } from '../../middlewares/verifyToken'
 import * as service from './service'
 
-export const getAll = async (req: Request, res: Response) => {
+export const getAll = async (req: AuthRequest, res: Response) => {
   try {
     const clients = await service.getAll()
     res.json({ success: true, data: clients })
@@ -10,7 +11,7 @@ export const getAll = async (req: Request, res: Response) => {
   }
 }
 
-export const getById = async (req: Request, res: Response) => {
+export const getById = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
     const client = await service.getById(id)
@@ -20,16 +21,16 @@ export const getById = async (req: Request, res: Response) => {
   }
 }
 
-export const create = async (req: Request, res: Response) => {
+export const create = async (req: AuthRequest, res: Response) => {
   try {
-    const client = await service.create(req.body)
+    const client = await service.create(req.body, req.user?.dbId)
     res.status(201).json({ success: true, data: client })
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message })
   }
 }
 
-export const update = async (req: Request, res: Response) => {
+export const update = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
     const client = await service.update(id, req.body)
@@ -39,7 +40,7 @@ export const update = async (req: Request, res: Response) => {
   }
 }
 
-export const updateBillingConfig = async (req: Request, res: Response) => {
+export const updateBillingConfig = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
     const client = await service.updateBillingConfig(id, req.body)
@@ -49,7 +50,7 @@ export const updateBillingConfig = async (req: Request, res: Response) => {
   }
 }
 
-export const remove = async (req: Request, res: Response) => {
+export const remove = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
     await service.remove(id)

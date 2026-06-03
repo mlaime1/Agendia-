@@ -1,7 +1,6 @@
-// src/modules/trips/service.ts
-
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
+import { AuthUser, getClientAccessLevel, getDriverClients, getPassengerClients, getDriverForClient } from '../../utils/calendarAuth';
 import { CreateTripDto, UpdateTripDto } from './types';
 
 function normalizeTripType(tripType: CreateTripDto['trip_type']): 'ida' | 'ida_y_vuelta' | 'especial' {
@@ -18,69 +17,24 @@ function normalizeTripType(tripType: CreateTripDto['trip_type']): 'ida' | 'ida_y
   throw new AppError('trip_type must be "ida", "ida y vuelta", "especial", or boolean', 400);
 }
 
-// Check if string is a UUID (Supabase auth_id format)
-function isUUID(str: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(str);
-}
-
-// Normalize user_id: if UUID, lookup in users table; if number, convert to BigInt
-async function normalizeUserId(userIdStr: string): Promise<bigint> {
-  // If it's a UUID, look it up in the users table by auth_id
-  if (isUUID(userIdStr)) {
-    const user = await prisma.users.findUnique({
-      where: { auth_id: userIdStr },
-      select: { id: true },
-    });
-    if (!user) {
-      throw new AppError(
-        `User with auth_id "${userIdStr}" not found. Create the user first.`,
-        404
-      );
-    }
-    return user.id;
-  }
-
-  // Otherwise, try to parse as BigInt
-  try {
-    return BigInt(userIdStr);
-  } catch (error) {
-    throw new AppError(
-      `user_id must be a valid UUID or number, got "${userIdStr}"`,
-      400
-    );
-  }
-}
-
-/**
- * Find or create a flat rate for a trip based on client_id and trip_type
- * If no rate exists, creates one with base_price = 0 (flat rate)
- * TODO: Implement date range validation (vigencia) in future iterations
- */
 async function findOrCreateRateForTrip(client_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
-  // Try to find existing rate
   let rate = await prisma.rates.findFirst({
     where: {
       client_id,
-      trip_type: trip_type as any, // trip_type_enum
-      // TODO: Add date range filtering when vigencia is implemented
-      // start_date: { lte: tripDate }
-      // end_date: { gte: tripDate }
+      trip_type: trip_type as any,
     },
     select: { id: true, base_price: true },
   });
 
-  // If rate exists, return it
   if (rate) {
     return { id: rate.id, base_price: Number(rate.base_price) };
   }
 
-  // Create a new flat rate (base_price = 0)
   const newRate = await prisma.rates.create({
     data: {
       client_id,
-      trip_type: trip_type as any, // trip_type_enum
-      base_price: 0, // Flat rate
+      trip_type: trip_type as any,
+      base_price: 0,
       start_date: new Date(),
     },
     select: { id: true, base_price: true },
@@ -91,29 +45,94 @@ async function findOrCreateRateForTrip(client_id: bigint, trip_type: string): Pr
 
 export const tripService = {
 
-  async getAll() {
+  async getAll(user?: AuthUser) {
+    if (!user) {
+      return prisma.trips.findMany({
+        include: { clients: true, routes: true, rates: true, users: true },
+        orderBy: { trip_date: 'desc' },
+      })
+    }
+
+    if (user.role === 'DRIVER') {
+      const clientIds = await getDriverClients(user.dbId)
+      const filters: any[] = [{ user_id: user.dbId }]
+      if (clientIds.length > 0) {
+        filters.push({ client_id: { in: clientIds } })
+      }
+      return prisma.trips.findMany({
+        where: { OR: filters },
+        include: { clients: true, routes: true, rates: true, users: true },
+        orderBy: { trip_date: 'desc' },
+      })
+    }
+
+    if (user.role === 'PASSENGER') {
+      const clientIds = await getPassengerClients(user.dbId)
+      const driverIds: bigint[] = []
+      for (const cid of clientIds) {
+        const did = await getDriverForClient(cid)
+        if (did) driverIds.push(did)
+      }
+
+      return prisma.trips.findMany({
+        where: {
+          OR: [
+            ...(clientIds.length > 0 ? [{ client_id: { in: clientIds } }] : []),
+            ...(driverIds.length > 0 ? [{ user_id: { in: driverIds } }] : []),
+          ],
+        },
+        include: { clients: true, routes: true, rates: true, users: true },
+        orderBy: { trip_date: 'desc' },
+      })
+    }
+
     return prisma.trips.findMany({
       include: { clients: true, routes: true, rates: true, users: true },
       orderBy: { trip_date: 'desc' },
-    });
+    })
   },
 
-  async getById(id: bigint) {
-    return prisma.trips.findUnique({
+  async getById(id: bigint, user?: AuthUser) {
+    const trip = await prisma.trips.findUnique({
       where: { id },
       include: { clients: true, routes: true, rates: true, users: true },
-    });
+    })
+    if (!trip) return null
+
+    if (user) {
+      const level = await getClientAccessLevel(user, trip.client_id)
+      if (level === 'none') {
+        const isOwnTrip = user.role === 'DRIVER' && trip.user_id === user.dbId
+        if (!isOwnTrip) return null
+      }
+    }
+
+    return trip
   },
 
-  async getByClient(client_id: bigint) {
+  async getByClient(client_id: bigint, user?: AuthUser) {
+    if (user) {
+      const level = await getClientAccessLevel(user, client_id)
+      if (level === 'none') {
+        throw new AppError('No tienes acceso a este cliente', 403)
+      }
+    }
+
     return prisma.trips.findMany({
       where: { client_id },
       include: { routes: true, rates: true, users: true },
       orderBy: { trip_date: 'desc' },
-    });
+    })
   },
 
-  async getByDateRange(client_id: bigint, from: Date, to: Date) {
+  async getByDateRange(client_id: bigint, from: Date, to: Date, user?: AuthUser) {
+    if (user) {
+      const level = await getClientAccessLevel(user, client_id)
+      if (level === 'none') {
+        throw new AppError('No tienes acceso a este cliente', 403)
+      }
+    }
+
     return prisma.trips.findMany({
       where: {
         client_id,
@@ -121,29 +140,43 @@ export const tripService = {
       },
       include: { routes: true, rates: true, users: true },
       orderBy: { trip_date: 'asc' },
-    });
+    })
   },
 
-  async create(data: CreateTripDto) {
-    // Normalize user_id: handles UUID lookup and BigInt conversion
-    const user_id = await normalizeUserId(data.user_id);
-    const client_id = BigInt(data.client_id);
-    const route_id = BigInt(data.route_id);
+  async create(data: CreateTripDto, user?: AuthUser) {
+    const client_id = BigInt(data.client_id)
+    const route_id = BigInt(data.route_id)
+
+    if (user) {
+      const level = await getClientAccessLevel(user, client_id)
+      if (level !== 'full') {
+        throw new AppError('No tienes permisos para crear viajes para este cliente', 403)
+      }
+    }
+
+    let user_id: bigint
+    if (user?.role === 'DRIVER') {
+      user_id = user.dbId
+    } else if (user?.role === 'PASSENGER') {
+      const driverId = await getDriverForClient(client_id)
+      if (!driverId) throw new AppError('El cliente no tiene un chofer asignado', 400)
+      user_id = driverId
+    } else {
+      throw new AppError('Usuario no autorizado', 403)
+    }
+
     const trip_type = normalizeTripType(data.trip_type);
 
-    // Auto-lookup or create rate if not provided
     let rate_id: bigint;
     let final_price: number;
 
     if (data.rate_id) {
-      // Use provided rate_id - allow final_price override
       rate_id = BigInt(data.rate_id);
       final_price = data.final_price ?? 0;
     } else {
-      // Auto-lookup or create rate - always use base_price, ignore frontend's final_price
       const rateData = await findOrCreateRateForTrip(client_id, trip_type);
       rate_id = rateData.id;
-      final_price = rateData.base_price; // Always from rate, never from frontend payload
+      final_price = rateData.base_price;
     }
 
     return prisma.trips.create({
@@ -164,7 +197,20 @@ export const tripService = {
     });
   },
 
-  async update(id: bigint, data: UpdateTripDto) {
+  async update(id: bigint, data: UpdateTripDto, user?: AuthUser) {
+    const trip = await prisma.trips.findUnique({
+      where: { id },
+      select: { client_id: true },
+    })
+    if (!trip) throw new AppError('Viaje no encontrado', 404)
+
+    if (user) {
+      const level = await getClientAccessLevel(user, trip.client_id)
+      if (level !== 'full') {
+        throw new AppError('No tienes permisos para modificar este viaje', 403)
+      }
+    }
+
     return prisma.trips.update({
       where: { id },
       data: {
@@ -181,7 +227,20 @@ export const tripService = {
     });
   },
 
-  async delete(id: bigint) {
+  async delete(id: bigint, user?: AuthUser) {
+    const trip = await prisma.trips.findUnique({
+      where: { id },
+      select: { client_id: true },
+    })
+    if (!trip) throw new AppError('Viaje no encontrado', 404)
+
+    if (user) {
+      const level = await getClientAccessLevel(user, trip.client_id)
+      if (level !== 'full') {
+        throw new AppError('No tienes permisos para eliminar este viaje', 403)
+      }
+    }
+
     return prisma.trips.delete({ where: { id } });
   },
 };

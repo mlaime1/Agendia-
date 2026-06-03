@@ -7,7 +7,7 @@ export async function register(req: Request, res: Response) {
     const data = await authService.register(req.body)
     res.status(201).json({ success: true, data })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 

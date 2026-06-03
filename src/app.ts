@@ -3,6 +3,7 @@ import express from 'express';
 import routes from './routes';
 import { errorHandler } from './middlewares/errorHandler';
 import { logger } from './middlewares/logger';
+import './utils/bigint';
 
 export const app = express();
 

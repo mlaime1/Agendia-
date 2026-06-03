@@ -23,6 +23,8 @@ model clients {
   summaries          summaries[]
   trips              trips[]
   users              users?      @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invitation_codes   invitation_codes[]
+  client_passengers  client_passengers[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -120,6 +122,9 @@ model users {
   summaries  summaries[]
   trips      trips[]
   clients    clients[]
+  client_passengers  client_passengers[]
+  invitations_created invitation_codes[] @relation("InvitationCreator")
+  invitations_used   invitation_codes[] @relation("InvitationUsedBy")
 }
 
 enum trip_type_enum {
@@ -131,4 +136,35 @@ enum trip_type_enum {
 enum Role {
   DRIVER
   ADMIN
+  PASSENGER
+}
+
+model invitation_codes {
+  id          BigInt    @id @default(autoincrement())
+  code        String    @unique
+  driver_id   BigInt
+  client_id   BigInt?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at  DateTime  @db.Timestamptz(6)
+  used_at     DateTime? @db.Timestamptz(6)
+  used_by_id  BigInt?
+
+  driver      users    @relation("InvitationCreator", fields: [driver_id], references: [id])
+  client      clients? @relation(fields: [client_id], references: [id])
+  used_by     users?   @relation("InvitationUsedBy", fields: [used_by_id], references: [id])
+
+  @@index([code])
+  @@index([driver_id])
+}
+
+model client_passengers {
+  client_id BigInt
+  user_id   BigInt
+  added_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  client clients @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([client_id, user_id])
+  @@index([user_id])
 }

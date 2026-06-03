@@ -60,13 +60,15 @@ CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 BEGIN
-  INSERT INTO public.users (auth_id, email, name, created_at)
+  INSERT INTO public.users (auth_id, email, name, created_at, role)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'name', 'Sin nombre'),
-    NOW()
-  );
+    NOW(),
+    'DRIVER'
+  )
+  ON CONFLICT (auth_id) DO NOTHING;
   RETURN NEW;
 END;
 $$;

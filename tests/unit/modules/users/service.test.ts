@@ -8,6 +8,9 @@ jest.mock('../../../../src/config/prisma', () => ({
     clients: {
       findUnique: jest.fn(),
     },
+    client_passengers: {
+      findMany: jest.fn(),
+    },
   },
 }))
 
@@ -54,6 +57,33 @@ describe('users/service', () => {
         type: 'client',
         id: BigInt(10),
         name: 'Test Client',
+      })
+    })
+
+    it('should return PASSENGER profile with linked clients', async () => {
+      const mockUser = {
+        id: BigInt(10),
+        name: 'Test Passenger',
+        email: 'pass@test.com',
+        alias: null,
+        role: 'PASSENGER',
+      }
+      mockPrisma.users.findUnique.mockResolvedValue(mockUser)
+      mockPrisma.client_passengers.findMany.mockResolvedValue([
+        {
+          client_id: BigInt(5),
+          client: { nombre: 'Client A', driver_id: BigInt(1) },
+        },
+      ])
+
+      const result = await getMe('auth-pass')
+
+      expect(result).toEqual({
+        ...mockUser,
+        type: 'passenger',
+        clients: [
+          { id: '5', nombre: 'Client A', driver_id: '1' },
+        ],
       })
     })
 

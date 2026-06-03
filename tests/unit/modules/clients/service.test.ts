@@ -126,6 +126,25 @@ describe('clients/service', () => {
         })
       ).rejects.toThrow('billing_day para ciclo mensual debe ser entre 1 y 31')
     })
+
+    it('should pass driverId when provided', async () => {
+      const mockClient = { id: BigInt(1), nombre: 'New Client', driver_id: BigInt(42) }
+      mockPrisma.clients.create.mockResolvedValue(mockClient)
+
+      const result = await create({
+        nombre: 'New Client',
+        phone: '1234567890',
+        billing_cycle: 'monthly',
+        billing_day: 1,
+      }, BigInt(42))
+
+      expect(result).toEqual(mockClient)
+      expect(mockPrisma.clients.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ driver_id: BigInt(42) }),
+        })
+      )
+    })
   })
 
   describe('update', () => {

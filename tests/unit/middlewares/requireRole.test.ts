@@ -55,6 +55,17 @@ describe('requireRole', () => {
     expect(mockNext).not.toHaveBeenCalled()
   })
 
+  it('should call next() for PASSENGER role', () => {
+    const req = {
+      user: { authId: 'auth-1', role: 'PASSENGER', dbId: BigInt(1) },
+    } as unknown as AuthRequest
+
+    const middleware = requireRole('PASSENGER')
+    middleware(req, mockRes, mockNext)
+
+    expect(mockNext).toHaveBeenCalled()
+  })
+
   it('should return 401 when user is undefined', () => {
     const req = { user: undefined } as unknown as AuthRequest
 

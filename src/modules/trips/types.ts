@@ -1,7 +1,6 @@
 // src/modules/trips/types.ts
 
 export interface CreateTripDto {
-  user_id: string;
   client_id: string;
   route_id: string;
   rate_id?: string;         // Optional: auto-lookup if not provided
