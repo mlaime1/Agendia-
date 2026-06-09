@@ -23,7 +23,9 @@
     "express": "^4.19.2",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
-    "psql": "^0.0.1"
+    "psql": "^0.0.1",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@prisma/client": "^7.8.0",
