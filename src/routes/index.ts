@@ -6,6 +6,7 @@ import summaryRoutes from '../modules/summaries/routes';
 import authRoutes from '../modules/auth/routes';
 import invitationsRoutes from '../modules/invitations/routes';
 import schedulesRoutes from '../modules/schedules/routes';
+import itineraryRoutes from '../modules/itinerary/routes';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/users', usersRoutes);
 router.use('/trips', tripRoutes);
 router.use('/summaries', summaryRoutes);
 router.use('/invitations', invitationsRoutes);
+router.use('/itineraries', itineraryRoutes);
 
 export default router;

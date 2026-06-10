@@ -6,6 +6,7 @@ jest.mock('../../../../src/config/prisma', () => ({
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      count: jest.fn(),
     },
     clients: {
       findUnique: jest.fn(),
@@ -16,6 +17,9 @@ jest.mock('../../../../src/config/prisma', () => ({
     },
     rates: {
       findFirst: jest.fn(),
+      create: jest.fn(),
+    },
+    trip_stops: {
       create: jest.fn(),
     },
   },
@@ -211,7 +215,7 @@ describe('trips/service', () => {
       }, driverUser)).rejects.toThrow('No tienes permisos')
     })
 
-    it('should create a new rate if none exists', async () => {
+    it('should create a new rate if none exists with route_id', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.rates.findFirst.mockResolvedValue(null)
       mockPrisma.rates.create.mockResolvedValue({ id: BigInt(30), base_price: 0 })
@@ -227,11 +231,37 @@ describe('trips/service', () => {
       expect(mockPrisma.rates.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           client_id: BigInt(5),
+          route_id: BigInt(3),
           trip_type: 'ida',
           base_price: 0,
         }),
         select: { id: true, base_price: true },
       })
+    })
+
+    it('should use existing rate specific to route_id when available', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.rates.findFirst.mockResolvedValueOnce({
+        id: BigInt(20),
+        base_price: 5000,
+      })
+      mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 5000 })
+
+      await tripService.create({
+        client_id: '5',
+        route_id: '3',
+        trip_date: '2025-06-01',
+        trip_type: 'ida',
+      }, driverUser)
+
+      expect(mockPrisma.rates.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            client_id: BigInt(5),
+            route_id: BigInt(3),
+          }),
+        }),
+      )
     })
   })
 
@@ -270,6 +300,72 @@ describe('trips/service', () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('none')
 
       await expect(tripService.delete(BigInt(1), driverUser)).rejects.toThrow('No tienes permisos')
+    })
+  })
+
+  describe('startTrip', () => {
+    it('should record start time and GPS', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.trips.update.mockResolvedValue({ id: BigInt(1) })
+
+      const result = await tripService.startTrip(BigInt(1), -34.6, -58.38, driverUser)
+
+      expect(result).toEqual({ id: BigInt(1) })
+      expect(mockPrisma.trips.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            start_lat: -34.6,
+            start_lng: -58.38,
+          }),
+        }),
+      )
+    })
+
+    it('should throw without full access', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('none')
+
+      await expect(tripService.startTrip(BigInt(1), 0, 0, driverUser)).rejects.toThrow('No tienes permisos')
+    })
+  })
+
+  describe('addStop', () => {
+    it('should create a trip stop', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.trip_stops.create.mockResolvedValue({ id: BigInt(10) })
+
+      const result = await tripService.addStop(BigInt(1), -34.6, -58.38, driverUser)
+
+      expect(result).toEqual({ id: BigInt(10) })
+      expect(mockPrisma.trip_stops.create).toHaveBeenCalledWith({
+        data: {
+          trip_id: BigInt(1),
+          lat: -34.6,
+          lng: -58.38,
+        },
+      })
+    })
+  })
+
+  describe('endTrip', () => {
+    it('should record end time and GPS', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.trips.update.mockResolvedValue({ id: BigInt(1) })
+
+      const result = await tripService.endTrip(BigInt(1), -34.6, -58.38, driverUser)
+
+      expect(result).toEqual({ id: BigInt(1) })
+      expect(mockPrisma.trips.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            end_lat: -34.6,
+            end_lng: -58.38,
+          }),
+        }),
+      )
     })
   })
 })

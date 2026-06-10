@@ -76,4 +76,43 @@ export const tripController = {
       res.status(204).send();
     } catch (error) { next(error); }
   },
+
+  async startTrip(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const idStr = _paramToString(req.params.id);
+      if (!idStr) return res.status(400).json({ success: false, message: 'id is required' });
+      const { lat, lng } = req.body;
+      if (lat == null || lng == null) {
+        return res.status(400).json({ success: false, message: 'lat y lng son requeridos' });
+      }
+      const trip = await tripService.startTrip(BigInt(idStr), lat, lng, req.user);
+      res.json({ success: true, data: trip });
+    } catch (error) { next(error); }
+  },
+
+  async addStop(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const idStr = _paramToString(req.params.id);
+      if (!idStr) return res.status(400).json({ success: false, message: 'id is required' });
+      const { lat, lng } = req.body;
+      if (lat == null || lng == null) {
+        return res.status(400).json({ success: false, message: 'lat y lng son requeridos' });
+      }
+      const stop = await tripService.addStop(BigInt(idStr), lat, lng, req.user);
+      res.status(201).json({ success: true, data: stop });
+    } catch (error) { next(error); }
+  },
+
+  async endTrip(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const idStr = _paramToString(req.params.id);
+      if (!idStr) return res.status(400).json({ success: false, message: 'id is required' });
+      const { lat, lng } = req.body;
+      if (lat == null || lng == null) {
+        return res.status(400).json({ success: false, message: 'lat y lng son requeridos' });
+      }
+      const trip = await tripService.endTrip(BigInt(idStr), lat, lng, req.user);
+      res.json({ success: true, data: trip });
+    } catch (error) { next(error); }
+  },
 };

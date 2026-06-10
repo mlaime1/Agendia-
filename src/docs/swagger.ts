@@ -182,6 +182,101 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
           updated_at: { type: 'string', format: 'date-time' },
         },
       },
+      CreateItineraryDTO: {
+        type: 'object',
+        required: ['name', 'client_id'],
+        properties: {
+          name: { type: 'string', example: 'Escuela a Casa' },
+          client_id: { type: 'string', example: '5' },
+        },
+      },
+      UpdateItineraryDTO: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+      },
+      CreateStopDTO: {
+        type: 'object',
+        required: ['address'],
+        properties: {
+          address: { type: 'string', example: 'Av. Corrientes 1234' },
+          stop_order: { type: 'integer', example: 1 },
+          lat: { type: 'number', example: -34.6037 },
+          lng: { type: 'number', example: -58.3816 },
+        },
+      },
+      UpdateStopDTO: {
+        type: 'object',
+        properties: {
+          address: { type: 'string' },
+          stop_order: { type: 'integer' },
+          lat: { type: 'number' },
+          lng: { type: 'number' },
+        },
+      },
+      CreateRateDTO: {
+        type: 'object',
+        required: ['trip_type', 'base_price'],
+        properties: {
+          trip_type: { type: 'string', enum: ['ida', 'ida y vuelta', 'especial'], example: 'ida' },
+          base_price: { type: 'number', example: 5000 },
+          surcharge_price: { type: 'number', example: 1000 },
+          start_date: { type: 'string', format: 'date' },
+          end_date: { type: 'string', format: 'date' },
+        },
+      },
+      UpdateRateDTO: {
+        type: 'object',
+        properties: {
+          base_price: { type: 'number' },
+          surcharge_price: { type: 'number' },
+          start_date: { type: 'string', format: 'date', nullable: true },
+          end_date: { type: 'string', format: 'date', nullable: true },
+        },
+      },
+      MatchRequestDTO: {
+        type: 'object',
+        required: ['client_id', 'points'],
+        properties: {
+          client_id: { type: 'string', example: '5' },
+          points: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['lat', 'lng'],
+              properties: {
+                lat: { type: 'number' },
+                lng: { type: 'number' },
+              },
+            },
+          },
+        },
+      },
+      StartTripDTO: {
+        type: 'object',
+        required: ['lat', 'lng'],
+        properties: {
+          lat: { type: 'number', example: -34.6037 },
+          lng: { type: 'number', example: -58.3816 },
+        },
+      },
+      StopTripDTO: {
+        type: 'object',
+        required: ['lat', 'lng'],
+        properties: {
+          lat: { type: 'number', example: -34.6037 },
+          lng: { type: 'number', example: -58.3816 },
+        },
+      },
+      EndTripDTO: {
+        type: 'object',
+        required: ['lat', 'lng'],
+        properties: {
+          lat: { type: 'number', example: -34.6037 },
+          lng: { type: 'number', example: -58.3816 },
+        },
+      },
     },
   },
   paths: {
@@ -667,6 +762,212 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
           403: { description: 'Sin permisos de escritura' },
           404: { description: 'Horario no encontrado para este cliente' },
         },
+      },
+    },
+
+    // ── Itineraries ───────────────────────────────────────────────
+    '/itineraries': {
+      get: {
+        tags: ['Itineraries'],
+        summary: 'Listar itinerarios (filtrados por rol)',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Lista de itinerarios' } },
+      },
+      post: {
+        tags: ['Itineraries'],
+        summary: 'Crear un itinerario',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateItineraryDTO' } } },
+        },
+        responses: { 201: { description: 'Itinerario creado' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/itineraries/{id}': {
+      get: {
+        tags: ['Itineraries'],
+        summary: 'Obtener itinerario por ID',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Itinerario encontrado' }, 404: { description: 'No encontrado' } },
+      },
+      patch: {
+        tags: ['Itineraries'],
+        summary: 'Actualizar un itinerario',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateItineraryDTO' } } } },
+        responses: { 200: { description: 'Itinerario actualizado' }, 403: { description: 'Sin permisos' } },
+      },
+      delete: {
+        tags: ['Itineraries'],
+        summary: 'Eliminar un itinerario (sin viajes asociados)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Itinerario eliminado' }, 400: { description: 'Tiene viajes asociados' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/itineraries/{id}/stops': {
+      get: {
+        tags: ['Itineraries'],
+        summary: 'Listar paradas de un itinerario',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Lista de paradas' } },
+      },
+      post: {
+        tags: ['Itineraries'],
+        summary: 'Agregar una parada',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateStopDTO' } } },
+        },
+        responses: { 201: { description: 'Parada creada' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/itineraries/{id}/stops/{stopId}': {
+      patch: {
+        tags: ['Itineraries'],
+        summary: 'Editar una parada',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'stopId', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateStopDTO' } } } },
+        responses: { 200: { description: 'Parada actualizada' }, 403: { description: 'Sin permisos' } },
+      },
+      delete: {
+        tags: ['Itineraries'],
+        summary: 'Eliminar una parada',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'stopId', required: true, schema: { type: 'string' } },
+        ],
+        responses: { 200: { description: 'Parada eliminada' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/itineraries/{id}/rates': {
+      get: {
+        tags: ['Itineraries'],
+        summary: 'Listar tarifas de un itinerario',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Lista de tarifas' } },
+      },
+      post: {
+        tags: ['Itineraries'],
+        summary: 'Fijar tarifa (monto) para un itinerario',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateRateDTO' } } },
+        },
+        responses: { 201: { description: 'Tarifa creada' }, 403: { description: 'Sin permisos' }, 409: { description: 'Ya existe tarifa para este tipo' } },
+      },
+    },
+    '/itineraries/{id}/rates/{rateId}': {
+      patch: {
+        tags: ['Itineraries'],
+        summary: 'Editar una tarifa',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'rateId', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateRateDTO' } } } },
+        responses: { 200: { description: 'Tarifa actualizada' }, 403: { description: 'Sin permisos' } },
+      },
+      delete: {
+        tags: ['Itineraries'],
+        summary: 'Eliminar una tarifa',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'rateId', required: true, schema: { type: 'string' } },
+        ],
+        responses: { 200: { description: 'Tarifa eliminada' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/itineraries/match': {
+      post: {
+        tags: ['Itineraries'],
+        summary: 'Encontrar itinerario más cercano a puntos GPS',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/MatchRequestDTO' } } },
+        },
+        responses: {
+          200: {
+            description: 'Mejor match encontrado',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        itinerary_id: { type: 'string' },
+                        name: { type: 'string' },
+                        distance_km: { type: 'number' },
+                        rate: { type: 'object', nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // ── Trips (extended) ─────────────────────────────────────────
+    '/trips/{id}/start': {
+      post: {
+        tags: ['Trips'],
+        summary: 'Iniciar viaje (chofer marca recogida)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/StartTripDTO' } } },
+        },
+        responses: { 200: { description: 'Viaje iniciado' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/trips/{id}/stops': {
+      post: {
+        tags: ['Trips'],
+        summary: 'Marcar parada ad-hoc durante el viaje',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/StopTripDTO' } } },
+        },
+        responses: { 201: { description: 'Parada marcada' }, 403: { description: 'Sin permisos' } },
+      },
+    },
+    '/trips/{id}/end': {
+      post: {
+        tags: ['Trips'],
+        summary: 'Finalizar viaje (chofer marca entrega)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/EndTripDTO' } } },
+        },
+        responses: { 200: { description: 'Viaje finalizado' }, 403: { description: 'Sin permisos' } },
       },
     },
   },

@@ -21,4 +21,8 @@ router.get('/:id', tripController.getById);
 router.patch('/:id', tripController.update);
 router.delete('/:id', tripController.delete);
 
+router.post('/:id/start', tripController.startTrip);
+router.post('/:id/stops', tripController.addStop);
+router.post('/:id/end', tripController.endTrip);
+
 export default router;
