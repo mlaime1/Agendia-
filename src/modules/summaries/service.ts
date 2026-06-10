@@ -32,7 +32,7 @@ const summaryInclude = {
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
-const buildSummary = async (
+export const createSummary = async (
   clientId: bigint,
   driverId: bigint,
   periodStart: Date,
@@ -102,7 +102,7 @@ export const createSummaryManual = async (dto: CreateSummaryManualDTO) => {
 
   const periodType = client?.billing_cycle ?? 'manual'
 
-  return buildSummary(clientId, driverId, periodStart, periodEnd, periodType, dto.notes)
+  return createSummary(clientId, driverId, periodStart, periodEnd, periodType, dto.notes)
 }
 
 // ─── Crear automático ─────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ export const createSummaryAuto = async (
     )
   }
 
-  return buildSummary(
+  return createSummary(
     clientBigInt,
     BigInt(dto.driver_id),
     period_start,
@@ -167,6 +167,71 @@ export const createSummaryAuto = async (
     period_type,
     dto.notes
   )
+}
+
+// ─── Procesar auto para scheduler ─────────────────────────────────────────────
+// Usa el driver_id del cliente (no de un request manual)
+
+export const processAutoSummary = async (clientId: bigint) => {
+  const client = await prisma.clients.findUnique({
+    where: { id: clientId },
+    select: {
+      id: true,
+      nombre: true,
+      billing_cycle: true,
+      billing_day: true,
+      billing_start_date: true,
+      driver_id: true,
+    },
+  })
+
+  if (!client) return { status: 'skipped' as const, reason: 'Cliente no encontrado' }
+  if (!client.billing_cycle) return { status: 'skipped' as const, reason: 'Sin ciclo de facturación' }
+  if (!client.driver_id) return { status: 'skipped' as const, reason: 'Sin driver asignado' }
+
+  const referenceDate = new Date()
+  const normalizedCycle = normalizeBillingCycle(client.billing_cycle)
+
+  let period_start: Date, period_end: Date, period_type: string
+
+  try {
+    const period = calculateBillingPeriod(
+      {
+        billing_cycle: normalizedCycle,
+        billing_day: client.billing_day,
+        billing_start_date: client.billing_start_date,
+      },
+      referenceDate
+    )
+    period_start = period.period_start
+    period_end = period.period_end
+    period_type = period.period_type
+  } catch {
+    return { status: 'skipped' as const, reason: 'Error al calcular período' }
+  }
+
+  const existing = await prisma.summaries.findFirst({
+    where: {
+      client_id: clientId,
+      period_start,
+      period_end,
+    },
+  })
+
+  if (existing) return { status: 'skipped' as const, reason: `Ya existe (id: ${existing.id})` }
+
+  try {
+    const summary = await createSummary(
+      clientId,
+      client.driver_id,
+      period_start,
+      period_end,
+      period_type
+    )
+    return { status: 'created' as const, summaryId: summary.id.toString() }
+  } catch (err: any) {
+    return { status: 'skipped' as const, reason: err.message }
+  }
 }
 
 // ─── Consultas ────────────────────────────────────────────────────────────────

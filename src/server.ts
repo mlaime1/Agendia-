@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { app } from './app';
 import { env } from './config/env';
+import { startSummaryScheduler } from './modules/summaries/scheduler';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -14,3 +15,4 @@ const startServer = (): void => {
 };
 
 startServer();
+startSummaryScheduler();

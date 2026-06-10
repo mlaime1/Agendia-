@@ -93,6 +93,7 @@ async function registerPassenger({ email, password, name, invitation_code, phone
           nombre: name,
           phone: phone ?? '0',
           billing_cycle: 'monthly',
+          billing_day: 1,
           driver_id: invitation.driver_id,
         },
       })
