@@ -5,6 +5,7 @@ import tripRoutes from '../modules/trips/routes';
 import summaryRoutes from '../modules/summaries/routes';
 import authRoutes from '../modules/auth/routes';
 import invitationsRoutes from '../modules/invitations/routes';
+import schedulesRoutes from '../modules/schedules/routes';
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.get('/health', (_req, res) => {
 });
 
 router.use('/clients', clientsRoutes);
+router.use('/clients/:id/schedules', schedulesRoutes);
 router.use('/auth', authRoutes)
 router.use('/users', usersRoutes);
 router.use('/trips', tripRoutes);

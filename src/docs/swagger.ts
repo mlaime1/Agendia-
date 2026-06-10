@@ -136,6 +136,52 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
           client_id: { type: 'string', nullable: true, example: '42', description: 'null = nuevo cliente se creará al registrarse' },
         },
       },
+      CreateScheduleDTO: {
+        type: 'object',
+        required: ['day_of_week', 'pickup_time'],
+        properties: {
+          day_of_week: { type: 'integer', minimum: 1, maximum: 7, example: 1, description: '1=Lunes .. 7=Domingo' },
+          pickup_time: { type: 'string', example: '07:30', description: 'Hora de ida en formato "HH:mm" (24h)' },
+          return_time: { type: 'string', nullable: true, example: '16:00', description: 'Hora de vuelta en "HH:mm". null = solo ida' },
+          label: { type: 'string', nullable: true, example: 'Escuela', description: 'Etiqueta libre, máximo 100 caracteres' },
+          is_active: { type: 'boolean', default: true, description: 'Permite deshabilitar un horario sin eliminarlo' },
+        },
+      },
+      UpdateScheduleDTO: {
+        type: 'object',
+        properties: {
+          day_of_week: { type: 'integer', minimum: 1, maximum: 7 },
+          pickup_time: { type: 'string', example: '08:00' },
+          return_time: { type: 'string', nullable: true, example: null, description: 'null explícito = solo ida' },
+          label: { type: 'string', nullable: true },
+          is_active: { type: 'boolean' },
+        },
+      },
+      BulkSchedulesDTO: {
+        type: 'object',
+        required: ['schedules'],
+        properties: {
+          schedules: {
+            type: 'array',
+            description: 'Lista completa de horarios. Reemplaza TODOS los existentes del cliente en una transacción.',
+            items: { $ref: '#/components/schemas/CreateScheduleDTO' },
+          },
+        },
+      },
+      ServiceSchedule: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: '1' },
+          client_id: { type: 'string', example: '5' },
+          day_of_week: { type: 'integer', example: 1 },
+          pickup_time: { type: 'string', nullable: true, example: '07:30' },
+          return_time: { type: 'string', nullable: true, example: '16:00' },
+          label: { type: 'string', nullable: true, example: 'Escuela' },
+          is_active: { type: 'boolean', example: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+      },
     },
   },
   paths: {
@@ -487,6 +533,139 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
               },
             },
           },
+        },
+      },
+    },
+
+    // ── Schedules ─────────────────────────────────────────────────
+    '/clients/{id}/schedules': {
+      get: {
+        tags: ['Schedules'],
+        summary: 'Listar todos los horarios habituales de un cliente',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: {
+            description: 'Lista de horarios ordenada por día y hora',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/ServiceSchedule' } },
+                  },
+                },
+              },
+            },
+          },
+          403: { description: 'El cliente no pertenece al usuario autenticado' },
+        },
+      },
+      post: {
+        tags: ['Schedules'],
+        summary: 'Agregar un nuevo horario al cliente',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateScheduleDTO' } } },
+        },
+        responses: {
+          201: {
+            description: 'Horario creado',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: { $ref: '#/components/schemas/ServiceSchedule' },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Datos inválidos (day_of_week fuera de rango, formato de hora incorrecto)' },
+          403: { description: 'Sin permisos de escritura sobre el cliente' },
+          409: { description: 'Ya existe un horario con ese día y hora' },
+        },
+      },
+      put: {
+        tags: ['Schedules'],
+        summary: 'Reemplazar en lote todos los horarios del cliente (transaccional)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/BulkSchedulesDTO' } } },
+        },
+        responses: {
+          200: {
+            description: 'Horarios reemplazados',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/ServiceSchedule' } },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Algún horario del lote es inválido' },
+          403: { description: 'Sin permisos de escritura' },
+        },
+      },
+    },
+    '/clients/{id}/schedules/{schedId}': {
+      patch: {
+        tags: ['Schedules'],
+        summary: 'Editar un horario existente (parcial)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'schedId', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateScheduleDTO' } } },
+        },
+        responses: {
+          200: {
+            description: 'Horario actualizado',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: { $ref: '#/components/schemas/ServiceSchedule' },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Datos inválidos' },
+          403: { description: 'Sin permisos de escritura' },
+          404: { description: 'Horario no encontrado para este cliente' },
+          409: { description: 'Ya existe un horario con ese día y hora' },
+        },
+      },
+      delete: {
+        tags: ['Schedules'],
+        summary: 'Eliminar un horario',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+          { in: 'path', name: 'schedId', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Horario eliminado' },
+          403: { description: 'Sin permisos de escritura' },
+          404: { description: 'Horario no encontrado para este cliente' },
         },
       },
     },
