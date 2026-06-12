@@ -4,6 +4,7 @@ export interface CreateClientDTO {
   billing_cycle: BillingCycle
   billing_day?: number | null
   billing_start_date?: string | null // YYYY-MM-DD
+  timezone?: string // IANA timezone, e.g. America/Argentina/Buenos_Aires
 }
 
 export interface UpdateClientDTO {
@@ -12,6 +13,7 @@ export interface UpdateClientDTO {
   billing_cycle?: BillingCycle
   billing_day?: number | null
   billing_start_date?: string | null // YYYY-MM-DD
+  timezone?: string // IANA timezone, e.g. America/Argentina/Buenos_Aires
 }
 
 // Solo los campos de facturación — para el panel de configuración

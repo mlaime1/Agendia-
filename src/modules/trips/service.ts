@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
+import { toUTC } from '../../utils/timezone';
 import { AuthUser, getClientAccessLevel, getDriverClients, getPassengerClients, getDriverForClient } from '../../utils/calendarAuth';
 import { CreateTripDto, UpdateTripDto } from './types';
 
@@ -185,6 +186,15 @@ export const tripService = {
 
     const trip_type = normalizeTripType(data.trip_type);
 
+    // Obtener timezone del cliente para interpretar trip_date correctamente
+    const client = await prisma.clients.findUnique({
+      where: { id: client_id },
+      select: { timezone: true },
+    })
+    if (!client) throw new AppError('Cliente no encontrado', 404)
+
+    const tripDate = toUTC(data.trip_date, client.timezone)
+
     let rate_id: bigint;
     let final_price: number;
 
@@ -203,7 +213,7 @@ export const tripService = {
         client_id,
         route_id,
         rate_id,
-        trip_date: new Date(data.trip_date),
+        trip_date: tripDate,
         trip_type,
         final_price,
         has_surcharge: data.has_surcharge ?? false,
@@ -229,10 +239,16 @@ export const tripService = {
       }
     }
 
+    const client = await prisma.clients.findUnique({
+      where: { id: trip.client_id },
+      select: { timezone: true },
+    })
+    if (!client) throw new AppError('Cliente no encontrado', 404)
+
     return prisma.trips.update({
       where: { id },
       data: {
-        ...(data.trip_date    && { trip_date: new Date(data.trip_date) }),
+        ...(data.trip_date    && { trip_date: toUTC(data.trip_date, client.timezone) }),
         ...(data.trip_type    !== undefined && { trip_type: normalizeTripType(data.trip_type) }),
         ...(data.final_price  !== undefined && { final_price: data.final_price }),
         ...(data.has_surcharge !== undefined && { has_surcharge: data.has_surcharge }),

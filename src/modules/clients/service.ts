@@ -1,4 +1,5 @@
 import { prisma } from '../../config/prisma'
+import { isValidIANA } from '../../utils/timezone'
 import { CreateClientDTO, UpdateClientDTO, UpdateBillingConfigDTO } from './types'
 
 const clientInclude = {
@@ -74,6 +75,11 @@ export const getById = async (id: string) => {
 export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
   validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
 
+  const tz = dto.timezone ?? 'America/Argentina/Buenos_Aires'
+  if (!isValidIANA(tz)) {
+    throw new Error(`timezone no es un identificador IANA válido: ${tz}`)
+  }
+
   return prisma.clients.create({
     data: {
       created_at: new Date(),
@@ -84,6 +90,7 @@ export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
       billing_start_date: dto.billing_start_date
         ? new Date(dto.billing_start_date)
         : null,
+      timezone: tz,
       ...(driverId && { driver_id: driverId }),
     },
   })
@@ -93,6 +100,10 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
   // Si viene algún campo de billing, validar la configuración completa
   if (dto.billing_cycle) {
     validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
+  }
+
+  if (dto.timezone !== undefined && !isValidIANA(dto.timezone)) {
+    throw new Error(`timezone no es un identificador IANA válido: ${dto.timezone}`)
   }
 
   return prisma.clients.update({
@@ -107,6 +118,7 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
           ? new Date(dto.billing_start_date)
           : null,
       }),
+      ...(dto.timezone !== undefined && { timezone: dto.timezone }),
     },
   })
 }

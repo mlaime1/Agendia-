@@ -33,6 +33,7 @@ async function main() {
       nombre:        'Andrea',
       phone:         '1157458676',
       billing_cycle: 'Mensual',
+      timezone:      'America/Argentina/Buenos_Aires',
       created_at:    new Date('2026-05-12T14:07:20.918Z'),
     },
   });
@@ -45,6 +46,7 @@ async function main() {
       nombre:        'Maia',
       phone:         '1168612399',
       billing_cycle: 'Mensual',
+      timezone:      'America/Argentina/Buenos_Aires',
       created_at:    new Date('2026-05-12T14:08:45.007Z'),
     },
   });
