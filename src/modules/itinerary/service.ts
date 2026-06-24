@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma'
 import { AppError } from '../../utils/AppError'
+import { normalizeTripType } from '../../utils/tripType'
 import { AuthUser, getClientAccessLevel } from '../../utils/calendarAuth'
 import {
   CreateItineraryDto,
@@ -251,10 +252,12 @@ export const itineraryService = {
       await requireFullAccess(user, clientId, 'crear tarifas')
     }
 
+    const tripType = normalizeTripType(dto.trip_type)
+
     const existing = await prisma.rates.findFirst({
       where: {
         route_id: BigInt(itineraryId),
-        trip_type: dto.trip_type as any,
+        trip_type: tripType,
       },
     })
     if (existing) {
@@ -267,7 +270,7 @@ export const itineraryService = {
     return prisma.rates.create({
       data: {
         route_id: BigInt(itineraryId),
-        trip_type: dto.trip_type as any,
+        trip_type: tripType,
         base_price: dto.base_price,
         ...(dto.surcharge_price !== undefined && {
           surcharge_price: dto.surcharge_price,

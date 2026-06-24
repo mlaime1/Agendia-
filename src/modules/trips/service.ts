@@ -2,21 +2,8 @@ import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
 import { toUTC } from '../../utils/timezone';
 import { AuthUser, getClientAccessLevel, getDriverClients, getPassengerClients, getDriverForClient } from '../../utils/calendarAuth';
+import { normalizeTripType } from '../../utils/tripType';
 import { CreateTripDto, UpdateTripDto } from './types';
-
-function normalizeTripType(tripType: CreateTripDto['trip_type']): 'ida' | 'ida_y_vuelta' | 'especial' {
-  if (typeof tripType === 'boolean') {
-    return tripType ? 'ida' : 'ida_y_vuelta';
-  }
-
-  const normalized = tripType.trim().toLowerCase();
-
-  if (normalized === 'ida') return 'ida';
-  if (normalized === 'ida y vuelta' || normalized === 'ida_y_vuelta') return 'ida_y_vuelta';
-  if (normalized === 'especial') return 'especial';
-
-  throw new AppError('trip_type must be "ida", "ida y vuelta", "especial", or boolean', 400);
-}
 
 async function findOrCreateRateForTrip(client_id: bigint, route_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
   // 1. Look for rate specific to this route
