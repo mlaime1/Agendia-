@@ -172,7 +172,7 @@ describe('billingPeriod', () => {
       it('should throw for invalid cycle', () => {
         expect(() =>
           calculateBillingPeriod(
-            { billing_cycle: 'invalid' },
+            { billing_cycle: 'invalid' as any },
             new Date('2025-06-01T12:00:00Z')
           )
         ).toThrow('billing_cycle inválido: invalid')

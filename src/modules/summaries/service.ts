@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, BillingCycle, PeriodType } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import {
   CreateSummaryManualDTO,
@@ -7,15 +7,14 @@ import {
 } from './types'
 import { calculateBillingPeriod } from './billingPeriod'
 
- 
-const normalizeBillingCycle = (value: string): string => {
-  const map: Record<string, string> = {
+const normalizeBillingCycle = (value: string): BillingCycle => {
+  const map: Record<string, BillingCycle> = {
     mensual: 'monthly',
     semanal: 'weekly',
     quincenal: 'biweekly',
   }
 
-  return map[value.toLowerCase()] ?? value
+  return map[value.toLowerCase()] ?? (value as BillingCycle)
 }
 
 
@@ -37,7 +36,7 @@ export const createSummary = async (
   driverId: bigint,
   periodStart: Date,
   periodEnd: Date,
-  periodType: string,
+  periodType: PeriodType,
   notes?: string
 ) => {
   // period_end incluye todo el día
@@ -100,7 +99,7 @@ export const createSummaryManual = async (dto: CreateSummaryManualDTO) => {
     select: { billing_cycle: true },
   })
 
-  const periodType = client?.billing_cycle ?? 'manual'
+  const periodType: PeriodType = client?.billing_cycle ?? 'manual'
 
   return createSummary(clientId, driverId, periodStart, periodEnd, periodType, dto.notes)
 }
@@ -192,7 +191,7 @@ export const processAutoSummary = async (clientId: bigint) => {
   const referenceDate = new Date()
   const normalizedCycle = normalizeBillingCycle(client.billing_cycle)
 
-  let period_start: Date, period_end: Date, period_type: string
+  let period_start: Date, period_end: Date, period_type: PeriodType
 
   try {
     const period = calculateBillingPeriod(

@@ -10,11 +10,13 @@ interface Trip {
   special_type?: string | null
 }
 
+import { PeriodType } from '@prisma/client'
+
 interface Summary {
   id: bigint
   period_start: Date
   period_end: Date
-  period_type: string
+  period_type: PeriodType
   total_trips: number
   total_amount: any
   clients: { nombre: string }

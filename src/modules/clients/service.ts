@@ -1,3 +1,4 @@
+import { BillingCycle } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { isValidIANA } from '../../utils/timezone'
 import { CreateClientDTO, UpdateClientDTO, UpdateBillingConfigDTO } from './types'
@@ -10,20 +11,20 @@ const clientInclude = {
   },
 }
 
-const normalizeBillingCycle = (value: string): string => {
-  const map: Record<string, string> = {
+const normalizeBillingCycle = (value: string): BillingCycle => {
+  const map: Record<string, BillingCycle> = {
     mensual: 'monthly',
     semanal: 'weekly',
     quincenal: 'biweekly',
   }
 
-  return map[value.toLowerCase()] ?? value
+  return map[value.toLowerCase()] ?? (value as BillingCycle)
 }
 
 // ─── Validaciones de billing ──────────────────────────────────────────────────
 
 const validateBillingConfig = (
-  billing_cycle: string,
+  billing_cycle: BillingCycle,
   billing_day?: number | null,
   billing_start_date?: string | null
 ) => {

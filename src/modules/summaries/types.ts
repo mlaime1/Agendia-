@@ -17,4 +17,3 @@ export interface UpdateSummaryStatusDTO {
 }
 
 export type SummaryStatus = 'draft' | 'sent' | 'paid' | 'archived'
-export type BillingCycle = 'weekly' | 'biweekly' | 'monthly'

@@ -7,11 +7,17 @@ import authRoutes from '../modules/auth/routes';
 import invitationsRoutes from '../modules/invitations/routes';
 import schedulesRoutes from '../modules/schedules/routes';
 import itineraryRoutes from '../modules/itinerary/routes';
+import { prisma } from '../config/prisma';
 
 const router = Router();
 
-router.get('/health', (_req, res) => {
-  res.status(200).json({ success: true, message: 'OK' });
+router.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ success: true, message: 'OK', database: 'up' });
+  } catch {
+    res.status(503).json({ success: true, message: 'OK', database: 'down' });
+  }
 });
 
 router.use('/clients', clientsRoutes);

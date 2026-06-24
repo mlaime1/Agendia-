@@ -1,13 +1,15 @@
 // src/modules/summaries/billingPeriod.ts
 
+import { BillingCycle, PeriodType } from '@prisma/client'
+
 export interface BillingPeriod {
   period_start: Date
   period_end: Date
-  period_type: 'weekly' | 'biweekly' | 'monthly'
+  period_type: PeriodType
 }
 
 interface ClientBillingConfig {
-  billing_cycle: string
+  billing_cycle: BillingCycle
   billing_day?: number | null
   billing_start_date?: Date | null
 }

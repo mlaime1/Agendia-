@@ -1,3 +1,7 @@
+import { BillingCycle } from '@prisma/client'
+
+export type { BillingCycle }
+
 export interface CreateClientDTO {
   nombre: string
   phone: string // Decimal en BD → string en DTO
@@ -22,5 +26,3 @@ export interface UpdateBillingConfigDTO {
   billing_day?: number | null
   billing_start_date?: string | null // YYYY-MM-DD
 }
-
-export type BillingCycle = 'weekly' | 'biweekly' | 'monthly'
