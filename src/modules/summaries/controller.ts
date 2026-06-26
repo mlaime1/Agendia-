@@ -62,6 +62,16 @@ export const updateStatus = async (req: Request, res: Response) => {
   }
 }
 
+export const paySummary = async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string
+    const summary = await service.paySummary(id, req.body)
+    res.json({ success: true, data: summary })
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message })
+  }
+}
+
 export const getPdf = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string

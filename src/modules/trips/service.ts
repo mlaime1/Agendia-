@@ -186,8 +186,15 @@ export const tripService = {
     let final_price: number;
 
     if (data.rate_id) {
-      rate_id = BigInt(data.rate_id);
-      final_price = data.final_price ?? 0;
+      const rate = await prisma.rates.findUnique({
+        where: { id: BigInt(data.rate_id) },
+      });
+      if (!rate) throw new AppError('Tarifa no encontrada', 404);
+
+      rate_id = rate.id;
+      const basePrice = Number(rate.base_price);
+      const surcharge = data.has_surcharge && rate.surcharge_price ? Number(rate.surcharge_price) : 0;
+      final_price = data.final_price ?? (basePrice + surcharge);
     } else {
       const rateData = await findOrCreateRateForTrip(client_id, route_id, trip_type);
       rate_id = rateData.id;

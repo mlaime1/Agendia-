@@ -85,6 +85,8 @@ export const createTestTrip = async (
       trip_type: overrides.trip_type ?? 'ida',
       final_price: overrides.final_price ?? 1000,
       has_surcharge: overrides.has_surcharge ?? false,
+      payment_status: overrides.payment_status ?? 'pending',
+      paid_amount: overrides.paid_amount ?? 0,
       ...Object.fromEntries(
         Object.entries(overrides).filter(
           ([k]) => !['user_id', 'client_id', 'route_id', 'rate_id', 'trip_date', 'trip_type', 'final_price', 'has_surcharge'].includes(k)
@@ -108,6 +110,7 @@ export const createTestSummary = async (
       period_type: overrides.period_type ?? 'monthly',
       total_trips: overrides.total_trips ?? 0,
       total_amount: overrides.total_amount ?? 0,
+      paid_amount: overrides.paid_amount ?? 0,
       status: overrides.status ?? 'draft',
       ...Object.fromEntries(
         Object.entries(overrides).filter(

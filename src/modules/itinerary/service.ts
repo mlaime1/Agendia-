@@ -63,7 +63,7 @@ export const itineraryService = {
   async getAll(user?: AuthUser) {
     if (!user) {
       return prisma.routes.findMany({
-        include: { route_stops: true, rates: true },
+        include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
     }
@@ -79,13 +79,13 @@ export const itineraryService = {
             in: clientIds.map((c) => c.id),
           },
         },
-        include: { route_stops: true, rates: true },
+        include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
     }
 
     return prisma.routes.findMany({
-      include: { route_stops: true, rates: true },
+      include: { route_stops: true, rates: true, clients: true },
       orderBy: { name: 'asc' },
     })
   },
@@ -96,6 +96,7 @@ export const itineraryService = {
       include: {
         route_stops: { orderBy: { stop_order: 'asc' } },
         rates: true,
+        clients: true,
       },
     })
 
@@ -120,7 +121,7 @@ export const itineraryService = {
         name: dto.name,
         client_id: clientId,
       },
-      include: { route_stops: true, rates: true },
+      include: { route_stops: true, rates: true, clients: true },
     })
   },
 
@@ -135,7 +136,7 @@ export const itineraryService = {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
       },
-      include: { route_stops: true, rates: true },
+      include: { route_stops: true, rates: true, clients: true },
     })
   },
 

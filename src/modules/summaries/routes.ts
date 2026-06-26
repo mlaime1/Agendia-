@@ -20,6 +20,7 @@ router.get('/:id/pdf', controller.getPdf)
 
 // Mutaciones
 router.patch('/:id/status', controller.updateStatus)
+router.post('/:id/pay', controller.paySummary)
 router.delete('/:id', controller.remove)
 
 export default router

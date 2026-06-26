@@ -9,6 +9,7 @@ describe('GET /health', () => {
     expect(response.body).toEqual({
       success: true,
       message: 'OK',
+      database: 'up',
     })
   })
 })

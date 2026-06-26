@@ -62,7 +62,7 @@ describe('itinerary/service', () => {
 
       expect(result).toEqual(mockItineraries)
       expect(mockPrisma.routes.findMany).toHaveBeenCalledWith({
-        include: { route_stops: true, rates: true },
+        include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
     })
@@ -79,7 +79,7 @@ describe('itinerary/service', () => {
         where: {
           client_id: { in: [BigInt(5), BigInt(6)] },
         },
-        include: { route_stops: true, rates: true },
+        include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
     })

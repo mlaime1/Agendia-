@@ -3,6 +3,7 @@ import clientsRoutes from '../modules/clients/routes';
 import usersRoutes from '../modules/users/routes';
 import tripRoutes from '../modules/trips/routes';
 import summaryRoutes from '../modules/summaries/routes';
+import paymentRoutes from '../modules/payments/routes';
 import authRoutes from '../modules/auth/routes';
 import invitationsRoutes from '../modules/invitations/routes';
 import schedulesRoutes from '../modules/schedules/routes';
@@ -26,6 +27,7 @@ router.use('/auth', authRoutes)
 router.use('/users', usersRoutes);
 router.use('/trips', tripRoutes);
 router.use('/summaries', summaryRoutes);
+router.use('/payments', paymentRoutes);
 router.use('/invitations', invitationsRoutes);
 router.use('/itineraries', itineraryRoutes);
 

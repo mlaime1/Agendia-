@@ -127,7 +127,45 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         type: 'object',
         required: ['status'],
         properties: {
-          status: { type: 'string', enum: ['draft', 'sent', 'paid', 'archived'], example: 'sent' },
+          status: { type: 'string', enum: ['draft', 'sent', 'paid', 'partial', 'archived'], example: 'sent' },
+        },
+      },
+      CreateSummaryPaymentDTO: {
+        type: 'object',
+        required: ['amount', 'method'],
+        properties: {
+          amount: { type: 'number', example: 2500, description: 'Monto a pagar sobre el resumen' },
+          method: { type: 'string', enum: ['cash', 'transfer', 'debit', 'credit', 'other'], example: 'cash' },
+          notes: { type: 'string', example: 'Pago del viernes' },
+        },
+      },
+      CreatePaymentDTO: {
+        type: 'object',
+        required: ['amount', 'method'],
+        properties: {
+          amount: { type: 'number', example: 5000, description: 'Monto del pago' },
+          method: { type: 'string', enum: ['cash', 'transfer', 'debit', 'credit', 'other'], example: 'cash' },
+          notes: { type: 'string', example: 'Abonó en destino' },
+        },
+      },
+      UpdatePaymentDTO: {
+        type: 'object',
+        properties: {
+          amount: { type: 'number', example: 5000 },
+          method: { type: 'string', enum: ['cash', 'transfer', 'debit', 'credit', 'other'] },
+          notes: { type: 'string' },
+        },
+      },
+      Payment: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: '1' },
+          trip_id: { type: 'string', example: '10' },
+          amount: { type: 'number', example: 5000 },
+          method: { type: 'string', example: 'cash' },
+          paid_at: { type: 'string', format: 'date-time' },
+          notes: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
         },
       },
       CreateInvitationDTO: {
@@ -585,6 +623,50 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
         requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateSummaryStatusDTO' } } } },
         responses: { 200: { description: 'Estado actualizado' } },
+      },
+    },
+    '/summaries/{id}/pay': {
+      post: {
+        tags: ['Summaries'],
+        summary: 'Registrar pago global sobre un resumen (distribuye a viajes pendientes)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateSummaryPaymentDTO' } } } },
+        responses: { 200: { description: 'Pago registrado y resumen actualizado' }, 400: { description: 'Monto excede el saldo pendiente' } },
+      },
+    },
+    '/payments/trip/{tripId}': {
+      get: {
+        tags: ['Payments'],
+        summary: 'Listar pagos de un viaje',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'tripId', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Lista de pagos', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Payment' } } } } } },
+      },
+      post: {
+        tags: ['Payments'],
+        summary: 'Registrar un pago sobre un viaje',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'tripId', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreatePaymentDTO' } } } },
+        responses: { 201: { description: 'Pago registrado' }, 400: { description: 'El pago excede el monto del viaje' } },
+      },
+    },
+    '/payments/{id}': {
+      patch: {
+        tags: ['Payments'],
+        summary: 'Editar un pago',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdatePaymentDTO' } } } },
+        responses: { 200: { description: 'Pago actualizado' } },
+      },
+      delete: {
+        tags: ['Payments'],
+        summary: 'Eliminar un pago (revierte el monto pagado del viaje)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Pago eliminado' } },
       },
     },
 

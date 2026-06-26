@@ -2,23 +2,31 @@ import PDFDocument from 'pdfkit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface Payment {
+  amount: any // Prisma Decimal
+  method: string
+}
+
 interface Trip {
   trip_date: Date
   trip_type: string
   final_price: any // Prisma Decimal
   has_surcharge: boolean
   special_type?: string | null
+  payment_status: string
+  paid_amount: any
+  payments?: Payment[]
 }
-
-import { PeriodType } from '@prisma/client'
 
 interface Summary {
   id: bigint
   period_start: Date
   period_end: Date
-  period_type: PeriodType
+  period_type: string
   total_trips: number
   total_amount: any
+  paid_amount: any
+  status: string
   clients: { nombre: string }
   users: { name: string }
   trips: Trip[]
@@ -68,6 +76,24 @@ const normalizeTripType = (trip: Trip): string => {
   return trip.trip_type
 }
 
+const paymentStatusLabel = (status: string): string => {
+  const map: Record<string, string> = {
+    pending: 'Pendiente',
+    partial: 'Parcial',
+    paid: 'Pagado',
+  }
+  return map[status] ?? status
+}
+
+const paymentStatusColor = (status: string): string => {
+  const map: Record<string, string> = {
+    pending: '#ef4444',
+    partial: '#f59e0b',
+    paid: '#10b981',
+  }
+  return map[status] ?? '#6b7280'
+}
+
 // Group trips by day → then by trip_type
 const groupTrips = (trips: Trip[]) => {
   const byDay = new Map<string, Trip[]>()
@@ -89,20 +115,21 @@ const groupTrips = (trips: Trip[]) => {
     const dayName = DAYS_ES[date.getUTCDay()]
     const dateStr = formatDate(date)
 
-    const byType = new Map<string, { count: number; total: number }>()
+    const byType = new Map<string, { count: number; total: number; trips: Trip[] }>()
 
     for (const trip of dayTrips) {
       const type = normalizeTripType(trip)
       const price = parseFloat(trip.final_price.toString())
 
       if (!byType.has(type)) {
-        byType.set(type, { count: 0, total: 0 })
+        byType.set(type, { count: 0, total: 0, trips: [] })
       }
 
       const entry = byType.get(type)!
 
       entry.count += 1
       entry.total += price
+      entry.trips.push(trip)
     }
 
     const dayTotal = dayTrips.reduce(
@@ -118,6 +145,29 @@ const groupTrips = (trips: Trip[]) => {
       tripCount: dayTrips.length,
     }
   })
+}
+
+const collectPaymentMethods = (trips: Trip[]): string[] => {
+  const methods = new Set<string>()
+  for (const trip of trips) {
+    if (trip.payments) {
+      for (const p of trip.payments) {
+        methods.add(p.method)
+      }
+    }
+  }
+  return Array.from(methods)
+}
+
+const methodLabel = (method: string): string => {
+  const map: Record<string, string> = {
+    cash: 'Efectivo',
+    transfer: 'Transferencia',
+    debit: 'Débito',
+    credit: 'Crédito',
+    other: 'Otro',
+  }
+  return map[method] ?? method
 }
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
@@ -163,7 +213,11 @@ export const generateSummaryPdf = (
     const periodLabel =
       summary.period_type === 'weekly'
         ? 'Semanal'
-        : 'Mensual'
+        : summary.period_type === 'monthly'
+        ? 'Mensual'
+        : summary.period_type === 'biweekly'
+        ? 'Quincenal'
+        : 'Manual'
 
     const periodStr = `${formatDateFull(summary.period_start)} al ${formatDateFull(summary.period_end)}`
 
@@ -181,6 +235,7 @@ export const generateSummaryPdf = (
       draft: '#f59e0b',
       sent: '#3b82f6',
       paid: '#10b981',
+      partial: '#f97316',
       archived: '#6b7280',
     }
 
@@ -188,10 +243,11 @@ export const generateSummaryPdf = (
       draft: 'Borrador',
       sent: 'Enviado',
       paid: 'Abonado',
+      partial: 'Pago parcial',
       archived: 'Archivado',
     }
 
-    const status = (summary as any).status ?? 'draft'
+    const status = summary.status ?? 'draft'
     const badgeColor = statusColors[status] ?? '#6b7280'
     const badgeLabel = statusLabels[status] ?? status
 
@@ -251,7 +307,7 @@ export const generateSummaryPdf = (
 
     for (const day of groupedDays) {
       const neededHeight =
-        30 + day.byType.size * 22 + 20
+        30 + day.byType.size * 30 + 20
 
       if (y + neededHeight > doc.page.height - 100) {
         doc.addPage()
@@ -281,7 +337,7 @@ export const generateSummaryPdf = (
 
       // Trip rows
 
-      for (const [type, { count, total }] of day.byType) {
+      for (const [type, { count, total, trips: typeTrips }] of day.byType) {
         const label =
           count === 1
             ? `1 viaje — ${type}`
@@ -308,10 +364,99 @@ export const generateSummaryPdf = (
             }
           )
 
-        y += 22
+        y += 16
+
+        // Payment status per trip (if there are multiple trips of same type, show aggregate)
+        for (const trip of typeTrips) {
+          const stLabel = paymentStatusLabel(trip.payment_status)
+          const stColor = paymentStatusColor(trip.payment_status)
+
+          doc
+            .fontSize(8)
+            .font('Helvetica')
+            .fillColor(stColor)
+            .text(
+              `  ● ${stLabel}${trip.payment_status === 'partial' ? ` (${formatMoney(trip.paid_amount)})` : ''}`,
+              MARGIN + 12,
+              y,
+              {
+                width: CONTENT_WIDTH - 120,
+              }
+            )
+          y += 12
+        }
+
+        y += 4
       }
 
       y += 10
+    }
+
+    // ── Payment summary ─────────────────────────────────────────────────────
+
+    const totalPaid = parseFloat(summary.paid_amount.toString())
+    const totalDue = parseFloat(summary.total_amount.toString()) - totalPaid
+    const methods = collectPaymentMethods(summary.trips)
+
+    if (totalPaid > 0 || totalDue > 0) {
+      y += 10
+
+      doc
+        .moveTo(MARGIN, y)
+        .lineTo(PAGE_WIDTH - MARGIN, y)
+        .strokeColor('#e5e7eb')
+        .lineWidth(1)
+        .stroke()
+
+      y += 14
+
+      doc
+        .fontSize(11)
+        .font('Helvetica-Bold')
+        .fillColor(COLOR_PRIMARY)
+        .text('Resumen de pagos', MARGIN, y)
+
+      y += 20
+
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .fillColor(COLOR_TEXT)
+        .text('Total del período:', MARGIN + 12, y)
+      doc
+        .font('Helvetica-Bold')
+        .text(formatMoney(summary.total_amount), MARGIN + 150, y)
+
+      y += 16
+
+      doc
+        .font('Helvetica')
+        .fillColor('#10b981')
+        .text('Total pagado:', MARGIN + 12, y)
+      doc
+        .font('Helvetica-Bold')
+        .text(formatMoney(summary.paid_amount), MARGIN + 150, y)
+
+      y += 16
+
+      if (totalDue > 0) {
+        doc
+          .font('Helvetica')
+          .fillColor('#ef4444')
+          .text('Saldo pendiente:', MARGIN + 12, y)
+        doc
+          .font('Helvetica-Bold')
+          .text(formatMoney(totalDue), MARGIN + 150, y)
+        y += 16
+      }
+
+      if (methods.length > 0) {
+        doc
+          .font('Helvetica')
+          .fillColor(COLOR_TEXT)
+          .text(`Métodos: ${methods.map(methodLabel).join(', ')}`, MARGIN + 12, y)
+        y += 16
+      }
     }
 
     // ── Footer / Totals ─────────────────────────────────────────────────────
