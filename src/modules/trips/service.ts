@@ -153,9 +153,19 @@ export const tripService = {
     const client_id = BigInt(data.client_id)
     const route_id = BigInt(data.route_id)
 
+    const route = await prisma.routes.findUnique({
+      where: { id: route_id },
+      select: { is_active: true },
+    })
+    if (!route) throw new AppError('Ruta no encontrada', 404)
+    if (!route.is_active) {
+      throw new AppError('No se puede crear un viaje en una ruta eliminada', 400)
+    }
+
     if (user) {
       const level = await getClientAccessLevel(user, client_id)
       if (level !== 'full') {
+        console.log(`[trips:create] denied for user ${user.dbId} role ${user.role} on client ${client_id}: level=${level}`)
         throw new AppError('No tienes permisos para crear viajes para este cliente', 403)
       }
     }
@@ -225,6 +235,18 @@ export const tripService = {
       select: { client_id: true },
     })
     if (!trip) throw new AppError('Viaje no encontrado', 404)
+
+    if (data.route_id) {
+      const newRouteId = BigInt(data.route_id)
+      const route = await prisma.routes.findUnique({
+        where: { id: newRouteId },
+        select: { is_active: true },
+      })
+      if (!route) throw new AppError('Ruta no encontrada', 404)
+      if (!route.is_active) {
+        throw new AppError('No se puede asignar un viaje a una ruta eliminada', 400)
+      }
+    }
 
     if (user) {
       const level = await getClientAccessLevel(user, trip.client_id)

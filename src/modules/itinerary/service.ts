@@ -57,12 +57,26 @@ async function requireFullAccess(
   }
 }
 
+async function requireActiveRoute(id: bigint, context: string): Promise<void> {
+  const route = await prisma.routes.findUnique({
+    where: { id },
+    select: { is_active: true },
+  })
+  if (!route) throw new AppError('Itinerario no encontrado', 404)
+  if (!route.is_active) {
+    throw new AppError(`No se puede ${context}: el itinerario está eliminado`, 400)
+  }
+}
+
 // ─── Itinerary CRUD ───────────────────────────────────────────────────────────
 
 export const itineraryService = {
   async getAll(user?: AuthUser) {
+    const baseWhere = { is_active: true }
+
     if (!user) {
       return prisma.routes.findMany({
+        where: baseWhere,
         include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
@@ -75,9 +89,14 @@ export const itineraryService = {
       })
       return prisma.routes.findMany({
         where: {
-          client_id: {
-            in: clientIds.map((c) => c.id),
-          },
+          AND: [
+            baseWhere,
+            {
+              client_id: {
+                in: clientIds.map((c) => c.id),
+              },
+            },
+          ],
         },
         include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
@@ -85,6 +104,7 @@ export const itineraryService = {
     }
 
     return prisma.routes.findMany({
+      where: baseWhere,
       include: { route_stops: true, rates: true, clients: true },
       orderBy: { name: 'asc' },
     })
@@ -130,6 +150,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'editar itinerarios')
     }
+    await requireActiveRoute(BigInt(id), 'editar')
 
     return prisma.routes.update({
       where: { id: BigInt(id) },
@@ -157,8 +178,20 @@ export const itineraryService = {
       )
     }
 
-    return prisma.routes.delete({
-      where: { id: BigInt(id) },
+    return prisma.$transaction(async (tx) => {
+      await tx.route_stops.deleteMany({
+        where: { route_id: BigInt(id) },
+      })
+      await tx.rates.deleteMany({
+        where: { route_id: BigInt(id) },
+      })
+      return tx.routes.update({
+        where: { id: BigInt(id) },
+        data: {
+          is_active: false,
+          deleted_at: new Date(),
+        },
+      })
     })
   },
 
@@ -181,6 +214,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'agregar paradas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'agregar paradas')
 
     return prisma.route_stops.create({
       data: {
@@ -203,6 +237,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'editar paradas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'editar paradas')
 
     return prisma.route_stops.update({
       where: { id: BigInt(stopId) },
@@ -224,6 +259,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'eliminar paradas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'eliminar paradas')
 
     return prisma.route_stops.delete({
       where: { id: BigInt(stopId) },
@@ -252,6 +288,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'crear tarifas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'crear tarifas')
 
     const tripType = normalizeTripType(dto.trip_type)
 
@@ -292,6 +329,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'editar tarifas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'editar tarifas')
 
     return prisma.rates.update({
       where: { id: BigInt(rateId) },
@@ -319,6 +357,7 @@ export const itineraryService = {
     if (clientId) {
       await requireFullAccess(user, clientId, 'eliminar tarifas')
     }
+    await requireActiveRoute(BigInt(itineraryId), 'eliminar tarifas')
 
     return prisma.rates.delete({
       where: { id: BigInt(rateId) },
@@ -332,7 +371,7 @@ export const itineraryService = {
     await requireFullAccess(user, clientId, 'buscar itinerario')
 
     const itineraries = await prisma.routes.findMany({
-      where: { client_id: clientId },
+      where: { client_id: clientId, is_active: true },
       include: {
         route_stops: {
           orderBy: { stop_order: 'asc' },

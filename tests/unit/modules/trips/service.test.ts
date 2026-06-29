@@ -8,6 +8,9 @@ jest.mock('../../../../src/config/prisma', () => ({
       delete: jest.fn(),
       count: jest.fn(),
     },
+    routes: {
+      findUnique: jest.fn(),
+    },
     clients: {
       findUnique: jest.fn(),
     },
@@ -173,6 +176,7 @@ describe('trips/service', () => {
   describe('create', () => {
     it('should create a trip for DRIVER using their own id', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findFirst.mockResolvedValue({ id: BigInt(20), base_price: 5000 })
       mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 5000 })
@@ -195,6 +199,7 @@ describe('trips/service', () => {
     it('should create a trip for PASSENGER using their driver id', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockCalendarAuth.getDriverForClient.mockResolvedValue(BigInt(2))
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findFirst.mockResolvedValue({ id: BigInt(20), base_price: 5000 })
       mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 5000 })
@@ -226,6 +231,7 @@ describe('trips/service', () => {
 
     it('should create a new rate if none exists with route_id', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findFirst.mockResolvedValue(null)
       mockPrisma.rates.create.mockResolvedValue({ id: BigInt(30), base_price: 0 })
@@ -251,6 +257,7 @@ describe('trips/service', () => {
 
     it('should use existing rate specific to route_id when available', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findFirst.mockResolvedValueOnce({
         id: BigInt(20),
@@ -277,6 +284,7 @@ describe('trips/service', () => {
 
     it('should calculate final_price from rate_id base_price', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findUnique.mockResolvedValue({
         id: BigInt(25),
@@ -303,6 +311,7 @@ describe('trips/service', () => {
 
     it('should add surcharge_price when rate_id and has_surcharge are provided', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findUnique.mockResolvedValue({
         id: BigInt(25),
@@ -330,6 +339,7 @@ describe('trips/service', () => {
 
     it('should allow final_price override when rate_id is provided', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findUnique.mockResolvedValue({
         id: BigInt(25),
@@ -357,6 +367,7 @@ describe('trips/service', () => {
 
     it('should throw if rate_id does not exist', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.rates.findUnique.mockResolvedValue(null)
 
@@ -367,6 +378,28 @@ describe('trips/service', () => {
         trip_date: '2025-06-01',
         trip_type: 'ida',
       }, driverUser)).rejects.toThrow('Tarifa no encontrada')
+    })
+
+    it('should throw if route is inactive', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: false })
+
+      await expect(tripService.create({
+        client_id: '5',
+        route_id: '3',
+        trip_date: '2025-06-01',
+        trip_type: 'ida',
+      }, driverUser)).rejects.toThrow('ruta eliminada')
+    })
+
+    it('should throw if route does not exist', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue(null)
+
+      await expect(tripService.create({
+        client_id: '5',
+        route_id: '3',
+        trip_date: '2025-06-01',
+        trip_type: 'ida',
+      }, driverUser)).rejects.toThrow('Ruta no encontrada')
     })
   })
 
@@ -387,6 +420,13 @@ describe('trips/service', () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('read-only')
 
       await expect(tripService.update(BigInt(1), { final_price: 7000 }, driverUser)).rejects.toThrow('No tienes permisos')
+    })
+
+    it('should throw if new route is inactive', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: false })
+
+      await expect(tripService.update(BigInt(1), { route_id: '3' }, driverUser)).rejects.toThrow('ruta eliminada')
     })
   })
 

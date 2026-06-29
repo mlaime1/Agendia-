@@ -1,5 +1,5 @@
-jest.mock('../../../../src/config/prisma', () => ({
-  prisma: {
+jest.mock('../../../../src/config/prisma', () => {
+  const mockPrisma = {
     routes: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -13,6 +13,7 @@ jest.mock('../../../../src/config/prisma', () => ({
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
     },
     rates: {
       findMany: jest.fn(),
@@ -20,6 +21,7 @@ jest.mock('../../../../src/config/prisma', () => ({
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
     },
     clients: {
       findMany: jest.fn(),
@@ -27,8 +29,14 @@ jest.mock('../../../../src/config/prisma', () => ({
     trips: {
       count: jest.fn(),
     },
-  },
-}))
+  }
+  return {
+    prisma: {
+      ...mockPrisma,
+      $transaction: jest.fn((cb: any) => cb(mockPrisma)),
+    },
+  }
+})
 
 jest.mock('../../../../src/lib/supabase', () => ({
   supabase: {},
@@ -54,7 +62,7 @@ describe('itinerary/service', () => {
   })
 
   describe('getAll', () => {
-    it('should return all itineraries when no user provided', async () => {
+    it('should return only active itineraries when no user provided', async () => {
       const mockItineraries = [{ id: BigInt(1), name: 'Route A' }]
       mockPrisma.routes.findMany.mockResolvedValue(mockItineraries)
 
@@ -62,12 +70,13 @@ describe('itinerary/service', () => {
 
       expect(result).toEqual(mockItineraries)
       expect(mockPrisma.routes.findMany).toHaveBeenCalledWith({
+        where: { is_active: true },
         include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
       })
     })
 
-    it('should filter by driver clients for DRIVER role', async () => {
+    it('should filter active itineraries by driver clients for DRIVER role', async () => {
       const mockItineraries = [{ id: BigInt(1) }]
       mockPrisma.clients.findMany.mockResolvedValue([{ id: BigInt(5) }, { id: BigInt(6) }])
       mockPrisma.routes.findMany.mockResolvedValue(mockItineraries)
@@ -77,7 +86,10 @@ describe('itinerary/service', () => {
       expect(result).toEqual(mockItineraries)
       expect(mockPrisma.routes.findMany).toHaveBeenCalledWith({
         where: {
-          client_id: { in: [BigInt(5), BigInt(6)] },
+          AND: [
+            { is_active: true },
+            { client_id: { in: [BigInt(5), BigInt(6)] } },
+          ],
         },
         include: { route_stops: true, rates: true, clients: true },
         orderBy: { name: 'asc' },
@@ -134,14 +146,29 @@ describe('itinerary/service', () => {
   })
 
   describe('remove', () => {
-    it('should delete an itinerary without trips', async () => {
+    it('should soft delete an itinerary without trips', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.trips.count.mockResolvedValue(0)
-      mockPrisma.routes.delete.mockResolvedValue({ id: BigInt(1) })
+      mockPrisma.route_stops.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.rates.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.routes.update.mockResolvedValue({ id: BigInt(1), is_active: false })
 
       const result = await itineraryService.remove('1', driverUser)
 
-      expect(result).toEqual({ id: BigInt(1) })
+      expect(result).toEqual({ id: BigInt(1), is_active: false })
+      expect(mockPrisma.route_stops.deleteMany).toHaveBeenCalledWith({
+        where: { route_id: BigInt(1) },
+      })
+      expect(mockPrisma.rates.deleteMany).toHaveBeenCalledWith({
+        where: { route_id: BigInt(1) },
+      })
+      expect(mockPrisma.routes.update).toHaveBeenCalledWith({
+        where: { id: BigInt(1) },
+        data: {
+          is_active: false,
+          deleted_at: expect.any(Date),
+        },
+      })
     })
 
     it('should throw if itinerary has associated trips', async () => {
@@ -154,7 +181,7 @@ describe('itinerary/service', () => {
 
   describe('stops', () => {
     it('should create a stop', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.route_stops.create.mockResolvedValue({ id: BigInt(10) })
 
@@ -168,7 +195,7 @@ describe('itinerary/service', () => {
     })
 
     it('should list stops', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.route_stops.findMany.mockResolvedValue([{ id: BigInt(1) }])
 
@@ -178,7 +205,7 @@ describe('itinerary/service', () => {
     })
 
     it('should update a stop', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.route_stops.update.mockResolvedValue({ id: BigInt(1) })
 
@@ -188,7 +215,7 @@ describe('itinerary/service', () => {
     })
 
     it('should delete a stop', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.route_stops.delete.mockResolvedValue({ id: BigInt(1) })
 
@@ -200,7 +227,7 @@ describe('itinerary/service', () => {
 
   describe('rates', () => {
     it('should create a rate', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.rates.findFirst.mockResolvedValue(null)
       mockPrisma.rates.create.mockResolvedValue({ id: BigInt(20) })
@@ -215,7 +242,7 @@ describe('itinerary/service', () => {
     })
 
     it('should throw if rate already exists for trip_type', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.rates.findFirst.mockResolvedValue({ id: BigInt(20) })
 
@@ -225,7 +252,7 @@ describe('itinerary/service', () => {
     })
 
     it('should list rates', async () => {
-      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5) })
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.rates.findMany.mockResolvedValue([{ id: BigInt(1) }])
 
@@ -236,7 +263,7 @@ describe('itinerary/service', () => {
   })
 
   describe('matchItinerary', () => {
-    it('should return the best matching itinerary', async () => {
+    it('should return the best matching active itinerary', async () => {
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.routes.findMany.mockResolvedValue([
         {
@@ -255,6 +282,10 @@ describe('itinerary/service', () => {
         driverUser,
       )
 
+      expect(mockPrisma.routes.findMany).toHaveBeenCalledWith({
+        where: { client_id: BigInt(5), is_active: true },
+        include: expect.any(Object),
+      })
       expect(result).toEqual(
         expect.objectContaining({
           itinerary_id: BigInt(1),

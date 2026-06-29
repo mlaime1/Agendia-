@@ -63,10 +63,14 @@ model routes {
   created_at  DateTime      @default(now()) @db.Timestamptz(6)
   name        String?       @db.VarChar
   client_id   BigInt?
+  is_active   Boolean       @default(true)
+  deleted_at  DateTime?     @db.Timestamptz(6)
   rates       rates[]
   route_stops route_stops[]
   clients     clients?      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trips       trips[]
+
+  @@index([is_active])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

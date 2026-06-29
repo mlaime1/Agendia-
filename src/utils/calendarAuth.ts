@@ -20,7 +20,9 @@ export async function isBillingActive(clientId: bigint): Promise<boolean> {
 
   const now = new Date()
   now.setHours(0, 0, 0, 0)
-  return lastSummary.period_end >= now
+  const active = lastSummary.period_end >= now
+  console.log(`[billing] clientId=${clientId} period_end=${lastSummary.period_end} now=${now} active=${active}`)
+  return active
 }
 
 export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Promise<AccessLevel> {
@@ -29,9 +31,15 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
       where: { id: clientId },
       select: { driver_id: true },
     })
-    if (!client || client.driver_id !== user.dbId) return 'none'
+    console.log(`[access] DRIVER user.dbId=${user.dbId} clientId=${clientId} client.driver_id=${client?.driver_id}`)
+    if (!client || client.driver_id !== user.dbId) {
+      console.log(`[access] -> none (driver mismatch)`)
+      return 'none'
+    }
     const active = await isBillingActive(clientId)
-    return active ? 'full' : 'read-only'
+    const level = active ? 'full' : 'read-only'
+    console.log(`[access] -> ${level}`)
+    return level
   }
 
   if (user.role === 'PASSENGER') {
