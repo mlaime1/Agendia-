@@ -99,7 +99,7 @@ describe('itinerary/service', () => {
 
   describe('getById', () => {
     it('should return an itinerary by id', async () => {
-      const mockItinerary = { id: BigInt(1), client_id: BigInt(5) }
+      const mockItinerary = { id: BigInt(1), client_id: BigInt(5), is_active: true }
       mockPrisma.routes.findUnique.mockResolvedValue(mockItinerary)
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
 
@@ -112,6 +112,12 @@ describe('itinerary/service', () => {
       mockPrisma.routes.findUnique.mockResolvedValue(null)
 
       await expect(itineraryService.getById('999')).rejects.toThrow('Itinerario no encontrado')
+    })
+
+    it('should throw if itinerary is deleted', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue({ id: BigInt(1), is_active: false })
+
+      await expect(itineraryService.getById('1')).rejects.toThrow('eliminado')
     })
   })
 
@@ -147,6 +153,7 @@ describe('itinerary/service', () => {
 
   describe('remove', () => {
     it('should soft delete an itinerary without trips', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.trips.count.mockResolvedValue(0)
       mockPrisma.route_stops.deleteMany.mockResolvedValue({ count: 0 })
@@ -172,10 +179,17 @@ describe('itinerary/service', () => {
     })
 
     it('should throw if itinerary has associated trips', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.trips.count.mockResolvedValue(3)
 
       await expect(itineraryService.remove('1', driverUser)).rejects.toThrow('viaje(s) asociado(s)')
+    })
+
+    it('should throw if itinerary not found', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue(null)
+
+      await expect(itineraryService.remove('999', driverUser)).rejects.toThrow('Itinerario no encontrado')
     })
   })
 
@@ -204,6 +218,12 @@ describe('itinerary/service', () => {
       expect(result).toEqual([{ id: BigInt(1) }])
     })
 
+    it('should throw if itinerary not found', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue(null)
+
+      await expect(itineraryService.getStops('999', driverUser)).rejects.toThrow('Itinerario no encontrado')
+    })
+
     it('should update a stop', async () => {
       mockPrisma.routes.findUnique.mockResolvedValue({ client_id: BigInt(5), is_active: true })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
@@ -222,6 +242,12 @@ describe('itinerary/service', () => {
       const result = await itineraryService.removeStop('1', '10', driverUser)
 
       expect(result).toEqual({ id: BigInt(1) })
+    })
+
+    it('should throw if itinerary not found', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue(null)
+
+      await expect(itineraryService.removeStop('999', '10', driverUser)).rejects.toThrow('Itinerario no encontrado')
     })
   })
 
@@ -259,6 +285,12 @@ describe('itinerary/service', () => {
       const result = await itineraryService.getRates('1', driverUser)
 
       expect(result).toEqual([{ id: BigInt(1) }])
+    })
+
+    it('should throw if itinerary not found', async () => {
+      mockPrisma.routes.findUnique.mockResolvedValue(null)
+
+      await expect(itineraryService.getRates('999', driverUser)).rejects.toThrow('Itinerario no encontrado')
     })
   })
 

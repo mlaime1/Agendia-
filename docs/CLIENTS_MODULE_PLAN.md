@@ -301,6 +301,18 @@ El contrato de servicio tendrá una pantalla propia.
 
 No se editará directamente desde Client Detail.
 
+## Decisión de modelo de datos (2026-06-08)
+
+En lugar de columnas directas en la tabla `clients`, se crea una **tabla separada `service_schedules`** que permite múltiples horarios por día y por cliente.
+
+Esto cubre casos reales como:
+
+- **Ida y vuelta clásico**: Lunes 07:30 → 16:00
+- **Solo ida**: Martes 09:00 (sin vuelta)
+- **Múltiples viajes en un mismo día**: Martes con pickup a 12:50, 14:05 y 15:00
+
+Ver [`SERVICE_SCHEDULES_PLAN.md`](./SERVICE_SCHEDULES_PLAN.md) para el detalle completo de backend (schema, endpoints, DTOs).
+
 ---
 
 # Navegación
@@ -323,21 +335,35 @@ Clients
 
 Mostrará información resumida del contrato.
 
-Ejemplo:
+Ejemplo con horario simple:
 
 ```text
 Contrato de servicio
 
 Facturación: Mensual
 
-Días:
-Lunes, Martes y Viernes
-
-Horario:
-07:30
+Horarios:
+Lunes    07:30 → 16:00
+Martes   09:00
+Viernes  08:15
 
 Inicio:
 01/06/2026
+
+[ Editar contrato ]
+```
+
+Ejemplo con múltiples horarios por día:
+
+```text
+Contrato de servicio
+
+Facturación: Semanal
+
+Horarios:
+Martes   12:50  Escuela
+Martes   14:05  Depto
+Martes   15:00  Escuela → Amoedo
 
 [ Editar contrato ]
 ```
@@ -366,37 +392,31 @@ billing_start_date
 
 ---
 
-## Días de transporte
-
-```text
-☑ Lunes
-☑ Martes
-☑ Miércoles
-☐ Jueves
-☑ Viernes
-☐ Sábado
-☐ Domingo
-```
-
-Objetivo:
-
-Definir los días habituales acordados con el cliente.
-
----
-
 ## Horarios acordados
 
-Inicialmente:
+Cada horario es una fila independiente. El usuario puede agregar, editar y eliminar filas.
 
 ```text
-Hora de ida
+┌─────────────────────────────────────────────────┐
+│ Día         │ Ida     │ Vuelta   │ Etiqueta     │
+├─────────────────────────────────────────────────┤
+│ Lunes    ▾  │ 07:30   │ 16:00    │              │
+│ Martes   ▾  │ 12:50   │ —        │ Escuela      │
+│ Martes   ▾  │ 14:05   │ —        │ Depto        │
+│ Martes   ▾  │ 15:00   │ —        │ Esc → Amoedo │
+├─────────────────────────────────────────────────┤
+│ [ + Agregar horario ]                           │
+└─────────────────────────────────────────────────┘
 
-07:30
-
-Hora de vuelta
-
-16:00
+[ Guardar cambios ]
 ```
+
+- **Día**: dropdown con días de la semana (Lunes a Domingo).
+- **Ida**: input de hora `HH:mm`, requerido.
+- **Vuelta**: input de hora `HH:mm`, opcional (vacío = solo ida).
+- **Etiqueta**: texto libre opcional para identificar el tramo.
+- Cada fila tiene un botón para eliminar.
+- El botón **"Guardar cambios"** envía todos los horarios en lote (endpoint `PUT` en lote, ver abajo).
 
 Objetivo:
 
@@ -406,42 +426,31 @@ No reemplazan la programación real de viajes.
 
 ---
 
-# Revisión requerida en Backend
+# Backend - Endpoints del contrato
 
-Actualmente existen:
+| Método | Ruta | Uso en frontend |
+|--------|------|-----------------|
+| `GET` | `/clients/:id/schedules` | Cargar horarios en Client Detail y Editar Contrato |
+| `POST` | `/clients/:id/schedules` | Agregar horario individual (opcional) |
+| `PUT` | `/clients/:id/schedules` | Guardar todos los horarios en lote desde Editar Contrato |
+| `PATCH` | `/clients/:id/schedules/:schedId` | Editar un horario individual |
+| `DELETE` | `/clients/:id/schedules/:schedId` | Eliminar un horario individual |
 
-```text
-billing_cycle
-billing_day
-billing_start_date
-```
-
-Verificar si existen campos para almacenar:
-
-* Días acordados de transporte
-* Horario habitual de ida
-* Horario habitual de vuelta
-
-Probablemente NO existan actualmente.
+El endpoint `PUT` recibe `{ schedules: [...] }` y reemplaza **todos** los horarios del cliente en una transacción. Es el endpoint principal para la pantalla Editar Contrato.
 
 ---
 
-# Posibles nuevas columnas
+# Datos que expone el backend por cada horario
 
-Opción simple para MVP:
-
-```sql
-transport_days JSONB
-
-pickup_time TIME
-
-return_time TIME
-```
-
-Ejemplo:
-
-```json
-["monday", "tuesday", "friday"]
+```ts
+{
+  id: number
+  day_of_week: number       // 1=Lunes .. 7=Domingo
+  pickup_time: string       // "HH:mm" (siempre presente)
+  return_time: string|null  // "HH:mm" o null
+  label: string|null        // etiqueta opcional
+  is_active: boolean        // true por defecto
+}
 ```
 
 ---
@@ -453,8 +462,7 @@ El contrato representa las condiciones habituales del servicio.
 Incluye:
 
 * Facturación
-* Días acordados
-* Horarios habituales
+* Horarios habituales (múltiples por día)
 
 No reemplaza los viajes individuales del calendario.
 

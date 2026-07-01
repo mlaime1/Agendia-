@@ -85,17 +85,17 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
       },
       CreateTripDTO: {
         type: 'object',
-        required: ['client_id', 'route_id', 'trip_date', 'trip_type'],
+        required: ['client_id', 'trip_date', 'trip_type'],
         properties: {
           client_id: { type: 'string', example: '5', description: 'ID del cliente/pasajero' },
-          route_id: { type: 'string', example: '3' },
-          rate_id: { type: 'string', example: '20', description: 'Opcional: auto-lookup si no se provee' },
+          route_id: { type: 'string', example: '3', description: 'Requerido para ida/ida y vuelta. Ignorado para viajes especiales.' },
+          rate_id: { type: 'string', example: '20', description: 'Opcional: auto-lookup si no se provee (solo para viajes con ruta)' },
           trip_date: { type: 'string', format: 'date-time', example: '2025-06-01T08:00:00' },
           trip_type: { type: 'string', enum: ['ida', 'ida y vuelta', 'especial'], example: 'ida' },
-          final_price: { type: 'number', example: 5000, description: 'Opcional: se calcula de la tarifa si no se provee' },
+          final_price: { type: 'number', example: 5000, description: 'Requerido para viajes especiales. Override opcional para ida/ida y vuelta.' },
           has_surcharge: { type: 'boolean', default: false },
           surcharge_reason: { type: 'string' },
-          special_type: { type: 'string' },
+          special_type: { type: 'string', description: 'Solo aplica cuando trip_type es especial' },
           notes: { type: 'string' },
         },
       },
@@ -585,18 +585,35 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
       get: {
         tags: ['Summaries'],
         summary: 'Listar resúmenes de un cliente',
+        description: 'Requiere autenticación con Bearer token. Puede ser consultado por: el cliente dueño, un passenger asociado al cliente, el driver asignado al cliente, o un admin.',
         security: [{ bearerAuth: [] }],
-        parameters: [{ in: 'path', name: 'clientId', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Lista de resúmenes' } },
+        parameters: [
+          { in: 'path', name: 'clientId', required: true, schema: { type: 'string' }, description: 'ID del cliente' },
+          { in: 'header', name: 'Authorization', required: true, schema: { type: 'string' }, example: 'Bearer <jwt_token>', description: 'Token JWT del usuario autenticado' },
+        ],
+        responses: {
+          200: { description: 'Lista de resúmenes' },
+          401: { description: 'Token no proporcionado o inválido' },
+          403: { description: 'El usuario autenticado no tiene acceso a este cliente' },
+        },
       },
     },
     '/summaries/{id}': {
       get: {
         tags: ['Summaries'],
         summary: 'Obtener resumen por ID',
+        description: 'Requiere autenticación con Bearer token. El usuario solo puede ver el resumen si pertenece al cliente asociado (cliente dueño, passenger vinculado, driver asignado o admin).',
         security: [{ bearerAuth: [] }],
-        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Resumen encontrado' } },
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'ID del resumen' },
+          { in: 'header', name: 'Authorization', required: true, schema: { type: 'string' }, example: 'Bearer <jwt_token>', description: 'Token JWT del usuario autenticado' },
+        ],
+        responses: {
+          200: { description: 'Resumen encontrado' },
+          401: { description: 'Token no proporcionado o inválido' },
+          403: { description: 'El usuario autenticado no tiene acceso a este resumen' },
+          404: { description: 'Resumen no encontrado' },
+        },
       },
       delete: {
         tags: ['Summaries'],
@@ -610,9 +627,18 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
       get: {
         tags: ['Summaries'],
         summary: 'Descargar resumen en PDF',
+        description: 'Requiere autenticación con Bearer token. El usuario solo puede descargar el PDF si pertenece al cliente asociado (cliente dueño, passenger vinculado, driver asignado o admin).',
         security: [{ bearerAuth: [] }],
-        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Archivo PDF', content: { 'application/pdf': {} } } },
+        parameters: [
+          { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'ID del resumen' },
+          { in: 'header', name: 'Authorization', required: true, schema: { type: 'string' }, example: 'Bearer <jwt_token>', description: 'Token JWT del usuario autenticado' },
+        ],
+        responses: {
+          200: { description: 'Archivo PDF', content: { 'application/pdf': {} } },
+          401: { description: 'Token no proporcionado o inválido' },
+          403: { description: 'El usuario autenticado no tiene acceso a este resumen' },
+          404: { description: 'Resumen no encontrado' },
+        },
       },
     },
     '/summaries/{id}/status': {

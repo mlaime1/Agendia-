@@ -50,7 +50,9 @@ export async function getMe(authId: string) {
   if (client) {
     return {
       type: 'client' as const,
+      role: 'client' as const,
       id: client.id,
+      linked_client_id: client.id.toString(),
       name: client.nombre,
     }
   }

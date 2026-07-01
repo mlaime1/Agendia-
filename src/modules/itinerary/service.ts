@@ -111,6 +111,8 @@ export const itineraryService = {
   },
 
   async getById(id: string, user?: AuthUser) {
+    await requireActiveRoute(BigInt(id), 'ver')
+
     const route = await prisma.routes.findUnique({
       where: { id: BigInt(id) },
       include: {
@@ -162,6 +164,8 @@ export const itineraryService = {
   },
 
   async remove(id: string, user?: AuthUser) {
+    await requireActiveRoute(BigInt(id), 'eliminar')
+
     const clientId = await getClientIdForItinerary(BigInt(id))
     if (clientId) {
       await requireFullAccess(user, clientId, 'eliminar itinerarios')
@@ -198,6 +202,8 @@ export const itineraryService = {
   // ─── Stops ────────────────────────────────────────────────────────────────
 
   async getStops(itineraryId: string, user?: AuthUser) {
+    await requireActiveRoute(BigInt(itineraryId), 'ver paradas')
+
     const clientId = await getClientIdForItinerary(BigInt(itineraryId))
     if (clientId) {
       await requireFullAccess(user, clientId, 'ver paradas')
@@ -255,11 +261,12 @@ export const itineraryService = {
     stopId: string,
     user?: AuthUser,
   ) {
+    await requireActiveRoute(BigInt(itineraryId), 'eliminar paradas')
+
     const clientId = await getClientIdForItinerary(BigInt(itineraryId))
     if (clientId) {
       await requireFullAccess(user, clientId, 'eliminar paradas')
     }
-    await requireActiveRoute(BigInt(itineraryId), 'eliminar paradas')
 
     return prisma.route_stops.delete({
       where: { id: BigInt(stopId) },
@@ -269,6 +276,8 @@ export const itineraryService = {
   // ─── Rates ────────────────────────────────────────────────────────────────
 
   async getRates(itineraryId: string, user?: AuthUser) {
+    await requireActiveRoute(BigInt(itineraryId), 'ver tarifas')
+
     const clientId = await getClientIdForItinerary(BigInt(itineraryId))
     if (clientId) {
       await requireFullAccess(user, clientId, 'ver tarifas')

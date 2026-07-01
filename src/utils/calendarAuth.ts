@@ -26,6 +26,10 @@ export async function isBillingActive(clientId: bigint): Promise<boolean> {
 }
 
 export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Promise<AccessLevel> {
+  if (user.role === 'ADMIN') {
+    return 'full'
+  }
+
   if (user.role === 'DRIVER') {
     const client = await prisma.clients.findUnique({
       where: { id: clientId },
@@ -36,10 +40,8 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
       console.log(`[access] -> none (driver mismatch)`)
       return 'none'
     }
-    const active = await isBillingActive(clientId)
-    const level = active ? 'full' : 'read-only'
-    console.log(`[access] -> ${level}`)
-    return level
+    console.log(`[access] -> full`)
+    return 'full'
   }
 
   if (user.role === 'PASSENGER') {
@@ -48,6 +50,10 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
     })
     if (link) return 'full'
     return 'none'
+  }
+
+  if (user.role === 'client') {
+    return user.dbId === clientId ? 'full' : 'none'
   }
 
   return 'none'

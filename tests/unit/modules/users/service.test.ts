@@ -55,7 +55,9 @@ describe('users/service', () => {
 
       expect(result).toEqual({
         type: 'client',
+        role: 'client',
         id: BigInt(10),
+        linked_client_id: '10',
         name: 'Test Client',
       })
     })

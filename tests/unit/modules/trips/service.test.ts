@@ -55,6 +55,7 @@ const mockCalendarAuth = calendarAuth as jest.Mocked<typeof calendarAuth>
 
 const driverUser = { authId: 'driver-auth', role: 'DRIVER' as const, dbId: BigInt(1) }
 const passengerUser = { authId: 'pass-auth', role: 'PASSENGER' as const, dbId: BigInt(10) }
+const clientUser = { authId: 'client-auth', role: 'client' as const, dbId: BigInt(5) }
 
 describe('trips/service', () => {
   beforeEach(() => {
@@ -105,6 +106,20 @@ describe('trips/service', () => {
 
       expect(result).toEqual(mockTrips)
       expect(mockCalendarAuth.getPassengerClients).toHaveBeenCalledWith(BigInt(10))
+    })
+
+    it('should filter trips by client_id for client role', async () => {
+      const mockTrips = [{ id: BigInt(1) }]
+      mockPrisma.trips.findMany.mockResolvedValue(mockTrips)
+
+      const result = await tripService.getAll(clientUser)
+
+      expect(result).toEqual(mockTrips)
+      expect(mockPrisma.trips.findMany).toHaveBeenCalledWith({
+        where: { client_id: BigInt(5) },
+        include: { clients: true, routes: true, rates: true, users: true },
+        orderBy: { trip_date: 'desc' },
+      })
     })
   })
 
@@ -211,6 +226,29 @@ describe('trips/service', () => {
         trip_type: 'ida',
       }, passengerUser)
 
+      expect(mockPrisma.trips.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: BigInt(2) }),
+        })
+      )
+    })
+
+    it('should create a trip for CLIENT using their driver id', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockCalendarAuth.getDriverForClient.mockResolvedValue(BigInt(2))
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true })
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.rates.findFirst.mockResolvedValue({ id: BigInt(20), base_price: 5000 })
+      mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 5000 })
+
+      const result = await tripService.create({
+        client_id: '5',
+        route_id: '3',
+        trip_date: '2025-06-01',
+        trip_type: 'ida',
+      }, clientUser)
+
+      expect(result).toEqual({ id: BigInt(1), final_price: 5000 })
       expect(mockPrisma.trips.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ user_id: BigInt(2) }),
@@ -401,11 +439,78 @@ describe('trips/service', () => {
         trip_type: 'ida',
       }, driverUser)).rejects.toThrow('Ruta no encontrada')
     })
+
+    it('should create a special trip without route_id and use final_price', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 5000 })
+
+      const result = await tripService.create({
+        client_id: '5',
+        trip_date: '2025-06-01',
+        trip_type: 'especial',
+        special_type: 'Parada extra',
+        final_price: 5000,
+      }, driverUser)
+
+      expect(result).toEqual({ id: BigInt(1), final_price: 5000 })
+      expect(mockPrisma.trips.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: BigInt(1),
+            client_id: BigInt(5),
+            route_id: undefined,
+            rate_id: null,
+            trip_type: 'especial',
+            final_price: 5000,
+            special_type: 'Parada extra',
+          }),
+        })
+      )
+      expect(mockPrisma.routes.findUnique).not.toHaveBeenCalled()
+      expect(mockPrisma.rates.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('should throw if special trip has no final_price', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+
+      await expect(tripService.create({
+        client_id: '5',
+        trip_date: '2025-06-01',
+        trip_type: 'especial',
+      }, driverUser)).rejects.toThrow('Los viajes especiales requieren final_price')
+    })
+
+    it('should ignore route_id for special trips', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.trips.create.mockResolvedValue({ id: BigInt(1), final_price: 7000 })
+
+      await tripService.create({
+        client_id: '5',
+        route_id: '3',
+        trip_date: '2025-06-01',
+        trip_type: 'especial',
+        final_price: 7000,
+      }, driverUser)
+
+      expect(mockPrisma.trips.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            route_id: undefined,
+            rate_id: null,
+            final_price: 7000,
+          }),
+        })
+      )
+      expect(mockPrisma.routes.findUnique).not.toHaveBeenCalled()
+    })
   })
 
   describe('update', () => {
     it('should update a trip when user has full access', async () => {
-      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.trips.update.mockResolvedValue({ id: BigInt(1), final_price: 7000 })
@@ -416,17 +521,57 @@ describe('trips/service', () => {
     })
 
     it('should throw if user has no write access', async () => {
-      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('read-only')
 
       await expect(tripService.update(BigInt(1), { final_price: 7000 }, driverUser)).rejects.toThrow('No tienes permisos')
     })
 
     it('should throw if new route is inactive', async () => {
-      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5) })
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
       mockPrisma.routes.findUnique.mockResolvedValue({ is_active: false })
 
       await expect(tripService.update(BigInt(1), { route_id: '3' }, driverUser)).rejects.toThrow('ruta eliminada')
+    })
+
+    it('should convert regular trip to special and clear route/rate', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20), special_type: null })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.trips.update.mockResolvedValue({ id: BigInt(1), trip_type: 'especial', final_price: 5000 })
+
+      const result = await tripService.update(BigInt(1), { trip_type: 'especial', final_price: 5000, special_type: 'Parada extra' }, driverUser)
+
+      expect(result).toEqual({ id: BigInt(1), trip_type: 'especial', final_price: 5000 })
+      expect(mockPrisma.trips.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            trip_type: 'especial',
+            final_price: 5000,
+            route_id: null,
+            rate_id: null,
+            special_type: 'Parada extra',
+          }),
+        })
+      )
+    })
+
+    it('should throw when converting to special without final_price', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20), special_type: null })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+
+      await expect(tripService.update(BigInt(1), { trip_type: 'especial' }, driverUser)).rejects.toThrow('Los viajes especiales requieren final_price')
+    })
+
+    it('should throw when converting special to regular without route_id', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'especial', route_id: null, rate_id: null, special_type: 'Parada extra' })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+
+      await expect(tripService.update(BigInt(1), { trip_type: 'ida' }, driverUser)).rejects.toThrow('Los viajes ida/ida y vuelta requieren route_id')
     })
   })
 
