@@ -7,10 +7,16 @@
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
-    "test": "jest",
-    "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "jest --testPathPattern=integration",
-    "test:watch": "jest --watch"
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "jest --testPathPatterns=unit",
+    "test:integration": "jest --testPathPatterns=integration --runInBand",
+    "test:watch": "jest --watch",
+    "db:test:setup": "tsx scripts/setup-test-db.ts",
+    "db:test:reset": "tsx scripts/reset-test-db.ts",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "deploy": "npm run build && npm run db:migrate:deploy && npm run start"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

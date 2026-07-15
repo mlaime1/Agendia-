@@ -1,4 +1,8 @@
 import type { Config } from 'jest'
+import * as dotenv from 'dotenv'
+
+// Load the dedicated test environment variables before any test module is imported.
+dotenv.config({ path: '.env.test' })
 
 const config: Config = {
   testEnvironment: 'node',

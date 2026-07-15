@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client'
+import { getTestPrisma } from './testDb'
 
-const prisma = new PrismaClient()
+const prisma = getTestPrisma()
 
 let userCounter = 0
 let clientCounter = 0

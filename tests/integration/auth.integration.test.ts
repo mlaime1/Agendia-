@@ -1,15 +1,17 @@
 /**
  * Integration tests for auth, invitations, and trip authorization flows.
- * Requires Supabase local instance running (supabase start).
- * Uses real database — test data is cleaned up after each run.
+ * Requires a local Supabase instance running (`supabase start`).
+ * All data is created in the dedicated test database and cleaned up afterwards.
  */
+import '../setup-integration'
 import request from 'supertest'
 import { app } from '../../src/app'
 import { supabase } from '../../src/lib/supabase'
-import { prisma } from '../../src/config/prisma'
+import { getTestPrisma } from '../helpers/testDb'
 
-const TEST_EMAIL_DRIVER = `test-driver-${Date.now()}@test.com`
-const TEST_EMAIL_PASSENGER = `test-pass-${Date.now()}@test.com`
+const runId = Date.now().toString()
+const TEST_EMAIL_DRIVER = `test-driver-${runId}@test.com`
+const TEST_EMAIL_PASSENGER = `test-pass-${runId}@test.com`
 const TEST_PASSWORD = 'TestPass123!'
 const TEST_PHONE = '5411223344'
 
@@ -18,9 +20,16 @@ let passengerToken: string
 let invitationCode: string
 let driverDbId: bigint
 let passengerDbId: bigint | undefined
+let driverAuthId: string
+let passengerAuthId: string | undefined
 let clientId: bigint
 
+const prisma = getTestPrisma()
+
 beforeAll(async () => {
+  // Ensure a clean slate before the suite starts.
+  // Per-suite cleanup is also handled by tests/setup.ts, but we make it explicit here.
+
   // ── Create driver user in Supabase Auth ──
   const { data: authDriver, error: createErr } = await supabase.auth.admin.createUser({
     email: TEST_EMAIL_DRIVER,
@@ -30,13 +39,14 @@ beforeAll(async () => {
   if (createErr || !authDriver.user) {
     throw new Error(`Failed to create driver auth user: ${createErr?.message}`)
   }
+  driverAuthId = authDriver.user.id
 
-  // The trigger handle_new_user should have created the users row, but upsert to be safe
+  // The trigger handle_new_user should have created the users row, but upsert to be safe.
   const driver = await prisma.users.upsert({
-    where: { auth_id: authDriver.user.id },
+    where: { auth_id: driverAuthId },
     update: { role: 'DRIVER' },
     create: {
-      auth_id: authDriver.user.id,
+      auth_id: driverAuthId,
       name: 'Integration Test Driver',
       email: TEST_EMAIL_DRIVER,
       role: 'DRIVER',
@@ -56,27 +66,31 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  // Clean up test data
-  try {
-    if (driverDbId) {
-      await prisma.client_passengers.deleteMany({ where: { user_id: driverDbId } })
-      await prisma.invitation_codes.deleteMany({ where: { driver_id: driverDbId } })
-      await prisma.users.delete({ where: { id: driverDbId } })
+  // Postgres data is truncated by tests/setup-integration.ts afterAll.
+  // Here we only remove the Supabase Auth users created by this suite.
+  const authIds = [driverAuthId, passengerAuthId].filter(Boolean) as string[]
+  for (const id of authIds) {
+    try {
+      await supabase.auth.admin.deleteUser(id)
+    } catch {
+      // Ignore auth cleanup errors.
     }
-    if (passengerDbId) {
-      await prisma.client_passengers.deleteMany({ where: { user_id: passengerDbId } })
-      await prisma.users.delete({ where: { id: passengerDbId } })
-    }
-    if (clientId) {
-      await prisma.trips.deleteMany({ where: { client_id: clientId } })
-      await prisma.rates.deleteMany({ where: { client_id: clientId } })
-      await prisma.routes.deleteMany({ where: { client_id: clientId } })
-      await prisma.clients.delete({ where: { id: clientId } })
-    }
-  } catch {
-    // Ignore cleanup errors
   }
 })
+
+async function findPassengerAuthId(): Promise<string | undefined> {
+  if (passengerAuthId) return passengerAuthId
+
+  // Try to find the passenger auth user by email.
+  const { data, error } = await supabase.auth.admin.listUsers()
+  if (error || !data.users) return undefined
+
+  const user = data.users.find((u) => u.email === TEST_EMAIL_PASSENGER)
+  if (user) {
+    passengerAuthId = user.id
+  }
+  return passengerAuthId
+}
 
 describe('Full integration: driver creates invitation → passenger registers → trip access', () => {
   test('POST /invitations — driver creates invitation code (new client)', async () => {
@@ -95,8 +109,7 @@ describe('Full integration: driver creates invitation → passenger registers �
   })
 
   test('GET /invitations/:code — public validation returns valid', async () => {
-    const res = await request(app)
-      .get(`/invitations/${invitationCode}`)
+    const res = await request(app).get(`/invitations/${invitationCode}`)
 
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
@@ -121,13 +134,16 @@ describe('Full integration: driver creates invitation → passenger registers �
 
     passengerToken = res.body.data.session?.access_token
     expect(passengerToken).toBeDefined()
+
+    // Resolve the passenger auth id so we can clean it up later.
+    await findPassengerAuthId()
   })
 
   test('POST /auth/register — rejects reused invitation code', async () => {
     const res = await request(app)
       .post('/auth/register')
       .send({
-        email: `other-${Date.now()}@test.com`,
+        email: `other-${runId}@test.com`,
         password: TEST_PASSWORD,
         name: 'Other User',
         invitation_code: invitationCode,
@@ -197,7 +213,7 @@ describe('Full integration: driver creates invitation → passenger registers �
     const res = await request(app)
       .post('/auth/register')
       .send({
-        email: `nobody-${Date.now()}@test.com`,
+        email: `nobody-${runId}@test.com`,
         password: TEST_PASSWORD,
         name: 'No Code User',
       })
