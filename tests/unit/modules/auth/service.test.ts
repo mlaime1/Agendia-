@@ -165,6 +165,9 @@ describe('auth/service', () => {
 
       await register({ ...passengerPayload, phone: '5411223344' })
 
+      expect(mockSupabase.auth.admin.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: '5411223344' })
+      )
       expect(capturedTx.clients.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

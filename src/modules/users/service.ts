@@ -1,8 +1,11 @@
+import { $Enums } from '@prisma/client'
 import { prisma } from '../../config/prisma'
+import { supabase } from '../../lib/supabase'
 import { AppError } from '../../utils/AppError'
+import { sanitizePhone } from '../../utils/phone'
 import { UpdateUserDTO } from './types'
 
-export async function getMe(authId: string) {
+export async function getMe(authId: string, phone?: string) {
   const user = await prisma.users.findUnique({
     where: { auth_id: authId },
     select: {
@@ -28,6 +31,7 @@ export async function getMe(authId: string) {
 
     return {
       ...user,
+      phone: phone ?? null,
       type: user.role.toLowerCase() as 'driver' | 'admin' | 'passenger',
       ...(clients.length > 0 ? {
         clients: clients.map((c) => ({
@@ -54,16 +58,37 @@ export async function getMe(authId: string) {
       id: client.id,
       linked_client_id: client.id.toString(),
       name: client.nombre,
+      phone: phone ?? null,
     }
   }
 
   throw new AppError('Usuario no encontrado', 404)
 }
 
-export async function updateMe(dbId: bigint, dto: UpdateUserDTO) {
-  return prisma.users.update({
+export async function updateMe(dbId: bigint, authId: string, role: $Enums.Role | 'client', dto: UpdateUserDTO) {
+  if (role === 'client') {
+    throw new AppError('Los clientes no pueden editar su perfil con este endpoint', 400)
+  }
+
+  let updatedPhone: string | undefined
+
+  if (dto.phone !== undefined) {
+    updatedPhone = sanitizePhone(dto.phone)
+    const { data, error } = await supabase.auth.admin.updateUserById(authId, {
+      phone: updatedPhone,
+      phone_confirm: true,
+    })
+
+    if (error || !data.user) {
+      throw new AppError(error?.message ?? 'No se pudo actualizar el teléfono', 400)
+    }
+  }
+
+  const { phone: _phone, ...profileData } = dto
+
+  const user = await prisma.users.update({
     where: { id: dbId },
-    data: dto,
+    data: profileData,
     select: {
       id: true,
       name: true,
@@ -72,6 +97,8 @@ export async function updateMe(dbId: bigint, dto: UpdateUserDTO) {
       role: true,
     }
   })
+
+  return updatedPhone !== undefined ? { ...user, phone: updatedPhone } : user
 }
 
 export async function getAll() {

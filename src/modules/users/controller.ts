@@ -4,7 +4,7 @@ import * as usersService from './service'
 
 export async function getMe(req: AuthRequest, res: Response) {
   try {
-    const data = await usersService.getMe(req.user!.authId)
+    const data = await usersService.getMe(req.user!.authId, req.user!.phone)
     res.status(200).json({ success: true, data })
   } catch (error: any) {
     res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
@@ -13,7 +13,7 @@ export async function getMe(req: AuthRequest, res: Response) {
 
 export async function updateMe(req: AuthRequest, res: Response) {
   try {
-    const data = await usersService.updateMe(req.user!.dbId, req.body)
+    const data = await usersService.updateMe(req.user!.dbId, req.user!.authId, req.user!.role, req.body)
     res.status(200).json({ success: true, data })
   } catch (error: any) {
     res.status(error.statusCode ?? 400).json({ success: false, message: error.message })

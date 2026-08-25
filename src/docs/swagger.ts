@@ -413,10 +413,10 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
       },
       patch: {
         tags: ['Users'],
-        summary: 'Actualizar perfil del usuario autenticado',
+        summary: 'Actualizar perfil del usuario autenticado (no disponible para clientes)',
         security: [{ bearerAuth: [] }],
         requestBody: {
-          content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, alias: { type: 'string' } } } } },
+          content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, alias: { type: 'string' }, phone: { type: 'string', example: '+5491122334455', description: 'Se guarda en Supabase Auth (auth.users.phone)' } } } } },
         },
         responses: { 200: { description: 'Perfil actualizado' } },
       },

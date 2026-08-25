@@ -8,6 +8,7 @@ export interface AuthRequest extends Request {
     authId: string
     role: $Enums.Role | 'client'
     dbId: bigint
+    phone?: string
   }
 }
 
@@ -26,6 +27,8 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
     return res.status(401).json({ success: false, message: 'Token inválido o expirado' })
   }
 
+  const phone = user.phone ?? user.user_metadata?.phone ?? undefined
+
   // Buscar en users con Prisma
   const dbUser = await prisma.users.findUnique({
     where: { auth_id: user.id },
@@ -36,7 +39,8 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
     req.user = {
       authId: user.id,
       role: dbUser.role,
-      dbId: dbUser.id
+      dbId: dbUser.id,
+      phone,
     }
     return next()
   }
@@ -51,7 +55,8 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
     req.user = {
       authId: user.id,
       role: 'client',
-      dbId: dbClient.id
+      dbId: dbClient.id,
+      phone,
     }
     return next()
   }

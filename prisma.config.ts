@@ -4,6 +4,14 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+/* 
+# Session pooler (5432): SOLO para migraciones (prisma migrate deploy/dev)
+# prisma.config.ts no soporta directUrl, así que hay que cambiar manualmente
+# "url" en ese archivo a DIRECT_URL antes de migrar, y devolverlo después.
+url: process.env.DIRECT_URL!,
+  shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
+*/
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {

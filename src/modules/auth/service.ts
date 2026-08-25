@@ -4,6 +4,7 @@ import { env } from '../../config/env'
 import { AppError } from '../../utils/AppError'
 import { RegisterDTO, LoginDTO } from './types'
 import * as invitationService from '../invitations/service'
+import { sanitizePhone } from '../../utils/phone'
 
 function getProfileName(name: string | undefined, email: string): string {
   const trimmed = name?.trim()
@@ -11,12 +12,13 @@ function getProfileName(name: string | undefined, email: string): string {
   return email.split('@')[0] || 'Sin nombre'
 }
 
-async function registerDriver({ email, password, name, alias }: RegisterDTO) {
+async function registerDriver({ email, password, name, alias, phone }: RegisterDTO) {
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
     user_metadata: { name },
     email_confirm: true,
+    ...(phone !== undefined ? { phone: sanitizePhone(phone) } : {}),
   })
 
   if (error) throw new AppError(error.message, 400)
@@ -64,6 +66,7 @@ async function registerPassenger({ email, password, name, invitation_code, phone
     password,
     user_metadata: { name },
     email_confirm: true,
+    ...(phone !== undefined ? { phone: sanitizePhone(phone) } : {}),
   })
 
   if (error) throw new AppError(error.message, 400)
