@@ -1,4 +1,6 @@
+import { BillingCycle } from '@prisma/client'
 import { prisma } from '../../config/prisma'
+import { isValidIANA } from '../../utils/timezone'
 import { CreateClientDTO, UpdateClientDTO, UpdateBillingConfigDTO } from './types'
 
 const clientInclude = {
@@ -9,20 +11,20 @@ const clientInclude = {
   },
 }
 
-const normalizeBillingCycle = (value: string): string => {
-  const map: Record<string, string> = {
+const normalizeBillingCycle = (value: string): BillingCycle => {
+  const map: Record<string, BillingCycle> = {
     mensual: 'monthly',
     semanal: 'weekly',
     quincenal: 'biweekly',
   }
 
-  return map[value.toLowerCase()] ?? value
+  return map[value.toLowerCase()] ?? (value as BillingCycle)
 }
 
 // ─── Validaciones de billing ──────────────────────────────────────────────────
 
 const validateBillingConfig = (
-  billing_cycle: string,
+  billing_cycle: BillingCycle,
   billing_day?: number | null,
   billing_start_date?: string | null
 ) => {
@@ -71,8 +73,13 @@ export const getById = async (id: string) => {
   return client
 }
 
-export const create = async (dto: CreateClientDTO) => {
+export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
   validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
+
+  const tz = dto.timezone ?? 'America/Argentina/Buenos_Aires'
+  if (!isValidIANA(tz)) {
+    throw new Error(`timezone no es un identificador IANA válido: ${tz}`)
+  }
 
   return prisma.clients.create({
     data: {
@@ -84,6 +91,8 @@ export const create = async (dto: CreateClientDTO) => {
       billing_start_date: dto.billing_start_date
         ? new Date(dto.billing_start_date)
         : null,
+      timezone: tz,
+      ...(driverId && { driver_id: driverId }),
     },
   })
 }
@@ -92,6 +101,10 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
   // Si viene algún campo de billing, validar la configuración completa
   if (dto.billing_cycle) {
     validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
+  }
+
+  if (dto.timezone !== undefined && !isValidIANA(dto.timezone)) {
+    throw new Error(`timezone no es un identificador IANA válido: ${dto.timezone}`)
   }
 
   return prisma.clients.update({
@@ -106,6 +119,7 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
           ? new Date(dto.billing_start_date)
           : null,
       }),
+      ...(dto.timezone !== undefined && { timezone: dto.timezone }),
     },
   })
 }

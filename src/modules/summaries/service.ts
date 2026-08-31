@@ -4,10 +4,10 @@ import {
   CreateSummaryManualDTO,
   CreateSummaryAutoDTO,
   UpdateSummaryStatusDTO,
+  CreateSummaryPaymentDTO,
 } from './types'
 import { calculateBillingPeriod } from './billingPeriod'
 
- 
 const normalizeBillingCycle = (value: string): string => {
   const map: Record<string, string> = {
     mensual: 'monthly',
@@ -18,13 +18,13 @@ const normalizeBillingCycle = (value: string): string => {
   return map[value.toLowerCase()] ?? value
 }
 
-
 const summaryInclude = {
   clients: true,
   users: true,
   trips: {
     include: {
       routes: true,
+      payments: true,
     },
     orderBy: { trip_date: 'asc' as const },
   },
@@ -32,7 +32,13 @@ const summaryInclude = {
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
-const buildSummary = async (
+const determineSummaryStatus = (total: Prisma.Decimal, paid: Prisma.Decimal): string => {
+  if (paid.greaterThan(0) && paid.greaterThanOrEqualTo(total)) return 'paid'
+  if (paid.greaterThan(0)) return 'partial'
+  return 'draft'
+}
+
+export const createSummary = async (
   clientId: bigint,
   driverId: bigint,
   periodStart: Date,
@@ -64,16 +70,24 @@ const buildSummary = async (
     new Prisma.Decimal(0)
   )
 
+  const paidAmount = trips.reduce(
+    (acc, trip) => acc.add(trip.paid_amount),
+    new Prisma.Decimal(0)
+  )
+
+  const status = determineSummaryStatus(totalAmount, paidAmount)
+
   const summary = await prisma.summaries.create({
     data: {
       client_id: clientId,
       driver_id: driverId,
       period_start: periodStart,
       period_end: periodEnd,
-      period_type: periodType,
+      period_type: periodType as any,
       total_trips: trips.length,
       total_amount: totalAmount,
-      status: 'draft',
+      paid_amount: paidAmount,
+      status,
       notes: notes ?? null,
       trips: {
         connect: trips.map((t) => ({ id: t.id })),
@@ -93,16 +107,9 @@ export const createSummaryManual = async (dto: CreateSummaryManualDTO) => {
   const driverId = BigInt(dto.driver_id)
   const periodStart = new Date(dto.period_start)
   const periodEnd = new Date(dto.period_end)
+  const periodType = dto.period_type ?? 'manual'
 
-  // Obtener billing_cycle del cliente para guardarlo en period_type
-  const client = await prisma.clients.findUnique({
-    where: { id: clientId },
-    select: { billing_cycle: true },
-  })
-
-  const periodType = client?.billing_cycle ?? 'manual'
-
-  return buildSummary(clientId, driverId, periodStart, periodEnd, periodType, dto.notes)
+  return createSummary(clientId, driverId, periodStart, periodEnd, periodType, dto.notes)
 }
 
 // ─── Crear automático ─────────────────────────────────────────────────────────
@@ -137,7 +144,7 @@ export const createSummaryAuto = async (
 
   const { period_start, period_end, period_type } = calculateBillingPeriod(
     {
-      billing_cycle: normalizedCycle,
+      billing_cycle: normalizedCycle as any,
       billing_day: client.billing_day,
       billing_start_date: client.billing_start_date,
     },
@@ -159,7 +166,7 @@ export const createSummaryAuto = async (
     )
   }
 
-  return buildSummary(
+  return createSummary(
     clientBigInt,
     BigInt(dto.driver_id),
     period_start,
@@ -167,6 +174,71 @@ export const createSummaryAuto = async (
     period_type,
     dto.notes
   )
+}
+
+// ─── Procesar auto para scheduler ─────────────────────────────────────────────
+// Usa el driver_id del cliente (no de un request manual)
+
+export const processAutoSummary = async (clientId: bigint) => {
+  const client = await prisma.clients.findUnique({
+    where: { id: clientId },
+    select: {
+      id: true,
+      nombre: true,
+      billing_cycle: true,
+      billing_day: true,
+      billing_start_date: true,
+      driver_id: true,
+    },
+  })
+
+  if (!client) return { status: 'skipped' as const, reason: 'Cliente no encontrado' }
+  if (!client.billing_cycle) return { status: 'skipped' as const, reason: 'Sin ciclo de facturación' }
+  if (!client.driver_id) return { status: 'skipped' as const, reason: 'Sin driver asignado' }
+
+  const referenceDate = new Date()
+  const normalizedCycle = normalizeBillingCycle(client.billing_cycle)
+
+  let period_start: Date, period_end: Date, period_type: string
+
+  try {
+    const period = calculateBillingPeriod(
+      {
+        billing_cycle: normalizedCycle as any,
+        billing_day: client.billing_day,
+        billing_start_date: client.billing_start_date,
+      },
+      referenceDate
+    )
+    period_start = period.period_start
+    period_end = period.period_end
+    period_type = period.period_type
+  } catch {
+    return { status: 'skipped' as const, reason: 'Error al calcular período' }
+  }
+
+  const existing = await prisma.summaries.findFirst({
+    where: {
+      client_id: clientId,
+      period_start,
+      period_end,
+    },
+  })
+
+  if (existing) return { status: 'skipped' as const, reason: `Ya existe (id: ${existing.id})` }
+
+  try {
+    const summary = await createSummary(
+      clientId,
+      client.driver_id,
+      period_start,
+      period_end,
+      period_type
+    )
+    return { status: 'created' as const, summaryId: summary.id.toString() }
+  } catch (err: any) {
+    return { status: 'skipped' as const, reason: err.message }
+  }
 }
 
 // ─── Consultas ────────────────────────────────────────────────────────────────
@@ -230,6 +302,100 @@ export const deleteSummary = async (id: string) => {
   })
 }
 
+// ─── Pago sobre summary ───────────────────────────────────────────────────────
+// Distribuye un pago global a los viajes del summary (FIFO cronológico)
+
+export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO) => {
+  const summaryId = BigInt(id)
+
+  const summary = await prisma.summaries.findUnique({
+    where: { id: summaryId },
+    include: {
+      trips: {
+        where: {
+          payment_status: { in: ['pending', 'partial'] },
+        },
+        orderBy: { trip_date: 'asc' },
+      },
+    },
+  })
+
+  if (!summary) throw new Error('Resumen no encontrado')
+
+  const totalAmount = Number(summary.total_amount)
+  const currentPaid = Number(summary.paid_amount)
+  const paymentAmount = dto.amount
+
+  if (currentPaid + paymentAmount > totalAmount) {
+    throw new Error(
+      `El pago excede el saldo del resumen. Pendiente: $${totalAmount - currentPaid}`
+    )
+  }
+
+  let remaining = paymentAmount
+
+  const newPaidAmount = currentPaid + paymentAmount
+  const newStatus = determineSummaryStatus(
+    new Prisma.Decimal(totalAmount),
+    new Prisma.Decimal(newPaidAmount)
+  )
+
+  const extraFields: Partial<{ paid_at: Date }> = {}
+  if (newStatus === 'paid') extraFields.paid_at = new Date()
+
+  const updatedSummary = await prisma.$transaction(async (tx) => {
+    for (const trip of summary.trips) {
+      if (remaining <= 0) break
+
+      const tripPrice = Number(trip.final_price)
+      const tripPaid = Number(trip.paid_amount)
+      const tripPending = tripPrice - tripPaid
+
+      if (tripPending <= 0) continue
+
+      const apply = Math.min(remaining, tripPending)
+      const newTripPaid = tripPaid + apply
+
+      let tripNewStatus: 'pending' | 'partial' | 'paid' = 'partial'
+      if (newTripPaid >= tripPrice) tripNewStatus = 'paid'
+      else if (newTripPaid <= 0) tripNewStatus = 'pending'
+
+      await tx.trips.update({
+        where: { id: trip.id },
+        data: {
+          paid_amount: newTripPaid,
+          payment_status: tripNewStatus,
+        },
+      })
+
+      await tx.payments.create({
+        data: {
+          trip_id: trip.id,
+          amount: apply,
+          method: dto.method,
+          notes: dto.notes ?? `Pago de resumen #${id}`,
+        },
+      })
+
+      remaining -= apply
+    }
+
+    const s = await tx.summaries.update({
+      where: { id: summaryId },
+      data: {
+        paid_amount: newPaidAmount,
+        status: newStatus,
+        ...extraFields,
+      },
+      include: summaryInclude,
+    })
+
+    return s
+  })
+
+  return updatedSummary
+}
+
 // ─── Preview del período activo ───────────────────────────────────────────────
 // Util para mostrar en el panel antes de confirmar la generación automática
 
@@ -250,7 +416,7 @@ export const previewBillingPeriod = async (clientId: string, referenceDate?: str
   const ref = referenceDate ? new Date(referenceDate) : new Date()
   const period = calculateBillingPeriod(
     {
-      billing_cycle: client.billing_cycle,
+      billing_cycle: client.billing_cycle as any,
       billing_day: client.billing_day,
       billing_start_date: client.billing_start_date,
     },

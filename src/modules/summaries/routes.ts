@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import * as controller from './controller'
+import { verifyToken } from '../../middlewares/verifyToken'
 
 const router = Router()
+
+router.use(verifyToken)
 
 // Crear
 router.post('/', controller.createManual)                          // manual: body con period_start y period_end
@@ -17,6 +20,7 @@ router.get('/:id/pdf', controller.getPdf)
 
 // Mutaciones
 router.patch('/:id/status', controller.updateStatus)
+router.post('/:id/pay', controller.paySummary)
 router.delete('/:id', controller.remove)
 
 export default router

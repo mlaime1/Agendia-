@@ -2,9 +2,9 @@ node_modules/
 dist/
 .env
 .env.local
-.env.development
+.env.dev
 .env.test
-.env.production
+.env.prod
 .tsbuildinfo
 coverage/
 
@@ -24,3 +24,5 @@ Thumbs.db
 .vscode/
 .idea/
 /src/generated/prisma
+
+.agents

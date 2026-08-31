@@ -13,14 +13,20 @@ model clients {
   created_at         DateTime    @default(now()) @db.Timestamptz(6)
   nombre             String      @db.VarChar
   phone              Decimal     @db.Decimal
-  billing_cycle      String      @db.VarChar
+  billing_cycle      BillingCycle
   billing_day        Int?
   billing_start_date DateTime?   @db.Date
+  timezone           String      @default("America/Argentina/Buenos_Aires") @db.VarChar
   auth_id            String?     @unique
+  driver_id          BigInt?
   rates              rates[]
   routes             routes[]
   summaries          summaries[]
   trips              trips[]
+  users              users?      @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invitation_codes   invitation_codes[]
+  client_passengers  client_passengers[]
+  service_schedules  service_schedules[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -45,6 +51,8 @@ model route_stops {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   address    String?  @db.VarChar
   stop_order Decimal? @db.Decimal
+  lat        Decimal? @db.Decimal(10, 7)
+  lng        Decimal? @db.Decimal(10, 7)
   route_id   BigInt?
   routes     routes?  @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -55,10 +63,14 @@ model routes {
   created_at  DateTime      @default(now()) @db.Timestamptz(6)
   name        String?       @db.VarChar
   client_id   BigInt?
+  is_active   Boolean       @default(true)
+  deleted_at  DateTime?     @db.Timestamptz(6)
   rates       rates[]
   route_stops route_stops[]
   clients     clients?      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trips       trips[]
+
+  @@index([is_active])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -69,9 +81,10 @@ model summaries {
   driver_id    BigInt
   period_start DateTime  @db.Date
   period_end   DateTime  @db.Date
-  period_type  String    @db.VarChar
+  period_type  PeriodType
   total_trips  Int       @default(0)
   total_amount Decimal   @default(0) @db.Decimal
+  paid_amount  Decimal   @default(0) @db.Decimal
   status       String    @default("draft") @db.VarChar
   sent_at      DateTime? @db.Timestamptz(6)
   paid_at      DateTime? @db.Timestamptz(6)
@@ -89,9 +102,9 @@ model trips {
   created_at       DateTime       @default(now()) @db.Timestamptz(6)
   user_id          BigInt
   client_id        BigInt
-  route_id         BigInt
+  route_id         BigInt?
   rate_id          BigInt?
-  trip_date        DateTime       @db.Timestamp(6)
+  trip_date        DateTime       @db.Timestamptz(6)
   trip_type        trip_type_enum
   final_price      Decimal        @db.Decimal
   has_surcharge    Boolean        @default(false)
@@ -99,11 +112,45 @@ model trips {
   special_type     String?        @db.VarChar
   notes            String?        @db.VarChar
   summary_id       BigInt?
+  started_at       DateTime?      @db.Timestamptz(6)
+  ended_at         DateTime?      @db.Timestamptz(6)
+  start_lat        Decimal?       @db.Decimal(10, 7)
+  start_lng        Decimal?       @db.Decimal(10, 7)
+  end_lat          Decimal?       @db.Decimal(10, 7)
+  end_lng          Decimal?       @db.Decimal(10, 7)
+  payment_status   payment_status_enum @default(pending)
+  paid_amount      Decimal        @default(0) @db.Decimal
   clients          clients        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   rates            rates?         @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  routes           routes         @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  routes           routes?        @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   summaries        summaries?     @relation(fields: [summary_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip_stops       trip_stops[]
+  payments         payments[]
   users            users          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model trip_stops {
+  id         BigInt    @id @default(autoincrement())
+  trip_id    BigInt
+  lat        Decimal   @db.Decimal(10, 7)
+  lng        Decimal   @db.Decimal(10, 7)
+  stopped_at DateTime  @default(now()) @db.Timestamptz(6)
+  trips      trips     @relation(fields: [trip_id], references: [id], onDelete: Cascade)
+
+  @@index([trip_id])
+}
+
+model payments {
+  id          BigInt    @id @default(autoincrement())
+  trip_id     BigInt
+  amount      Decimal   @db.Decimal
+  method      String    @db.VarChar
+  paid_at     DateTime  @default(now()) @db.Timestamptz(6)
+  notes       String?   @db.VarChar
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  trips       trips     @relation(fields: [trip_id], references: [id], onDelete: Cascade)
+
+  @@index([trip_id])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -114,13 +161,89 @@ model users {
   email      String      @db.VarChar
   alias      String?     @db.VarChar
   auth_id    String?     @unique
-  role       String      @default("driver")
+  role       Role        @default(DRIVER)
   summaries  summaries[]
   trips      trips[]
+  clients    clients[]
+  client_passengers  client_passengers[]
+  invitations_created invitation_codes[] @relation("InvitationCreator")
+  invitations_used   invitation_codes[] @relation("InvitationUsedBy")
 }
 
 enum trip_type_enum {
   ida
   ida_y_vuelta @map("ida y vuelta")
   especial
+}
+
+enum payment_status_enum {
+  pending
+  partial
+  paid
+}
+
+enum Role {
+  DRIVER
+  ADMIN
+  PASSENGER
+}
+
+enum BillingCycle {
+  weekly
+  biweekly
+  monthly
+}
+
+enum PeriodType {
+  weekly
+  biweekly
+  monthly
+  manual
+}
+
+model invitation_codes {
+  id          BigInt    @id @default(autoincrement())
+  code        String    @unique
+  driver_id   BigInt
+  client_id   BigInt?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at  DateTime  @db.Timestamptz(6)
+  used_at     DateTime? @db.Timestamptz(6)
+  used_by_id  BigInt?
+
+  driver      users    @relation("InvitationCreator", fields: [driver_id], references: [id])
+  client      clients? @relation(fields: [client_id], references: [id])
+  used_by     users?   @relation("InvitationUsedBy", fields: [used_by_id], references: [id])
+
+  @@index([code])
+  @@index([driver_id])
+}
+
+model client_passengers {
+  client_id BigInt
+  user_id   BigInt
+  added_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  client clients @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([client_id, user_id])
+  @@index([user_id])
+}
+
+model service_schedules {
+  id          BigInt    @id @default(autoincrement())
+  client_id   BigInt
+  day_of_week Int
+  pickup_time DateTime  @db.Time(0)
+  return_time DateTime? @db.Time(0)
+  label       String?   @db.VarChar(100)
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+
+  client      clients   @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, day_of_week, pickup_time])
+  @@index([client_id])
 }

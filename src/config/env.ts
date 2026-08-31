@@ -12,4 +12,6 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(portValue),
   databaseUrl: process.env.DATABASE_URL,
+  adminKey: process.env.ADMIN_KEY,
+  supabaseStudioUrl: process.env.SUPABASE_STUDIO_URL ?? 'http://127.0.0.1:54323',
 } as const;
