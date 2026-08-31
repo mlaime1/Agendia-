@@ -48,12 +48,12 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
     const link = await prisma.client_passengers.findUnique({
       where: { client_id_user_id: { client_id: clientId, user_id: user.dbId } },
     })
-    if (link) return 'full'
+    if (link) return 'read-only'
     return 'none'
   }
 
   if (user.role === 'client') {
-    return user.dbId === clientId ? 'full' : 'none'
+    return user.dbId === clientId ? 'read-only' : 'none'
   }
 
   return 'none'
