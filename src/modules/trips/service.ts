@@ -189,6 +189,25 @@ export const tripService = {
 
     const tripDate = toUTC(data.trip_date, client.timezone)
 
+    // --- VALIDACIÓN DE FECHA EN RANGO ABONADO/ARCHIVADO ----
+    // Buscar si la fecha del viaje está en un período de summary cerrado (abonado/pagado/archivado)
+    const closedSummary = await prisma.summaries.findFirst({
+      where: {
+        client_id: client_id,
+        period_start: { lte: tripDate },
+        period_end: { gte: tripDate },
+        status: { in: ['paid', 'archived'] }, // incluir cualquier estado cerrado
+      },
+      select: { id: true },
+    });
+
+    if (closedSummary) {
+      if (user?.role === 'client' || user?.role === 'PASSENGER') {
+        throw new AppError('No se pueden crear viajes en fechas ya abonadas/archivadas', 400);
+      }
+      // ADMIN o DRIVER pueden crear, pero el viaje debe entrar como abonado pagado
+    }
+
     let route_id: bigint | undefined = undefined
     let rate_id: bigint | null = null
     let final_price: number
@@ -230,6 +249,14 @@ export const tripService = {
       }
     }
 
+    // --- Si se crea dentro de un resumen cerrado y es ADMIN/DRIVER, marcar como pagado ---
+    let payment_status = undefined;
+    let paid_amount = undefined;
+    if (closedSummary && (user?.role === 'ADMIN' || user?.role === 'DRIVER')) {
+      payment_status = 'paid';
+      paid_amount = final_price;
+    }
+
     return prisma.trips.create({
       data: {
         user_id,
@@ -243,6 +270,8 @@ export const tripService = {
         surcharge_reason: data.surcharge_reason,
         special_type: trip_type === 'especial' ? data.special_type : null,
         notes: data.notes,
+        ...(payment_status && { payment_status }),
+        ...(paid_amount !== undefined && { paid_amount }),
       },
       include: { clients: true, routes: true, rates: true },
     });
