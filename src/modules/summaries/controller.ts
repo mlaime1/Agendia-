@@ -6,20 +6,22 @@ import { getClientAccessLevel } from '../../utils/calendarAuth'
 
 export const createManual = async (req: AuthRequest, res: Response) => {
   try {
-    const summary = await service.createSummaryManual(req.body)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.createSummaryManual(req.body, req.user)
     res.status(201).json({ success: true, data: summary })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
 export const createAuto = async (req: AuthRequest, res: Response) => {
   try {
     const clientId = req.params.clientId as string
-    const summary = await service.createSummaryAuto(clientId, req.body)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.createSummaryAuto(clientId, req.body, req.user)
     res.status(201).json({ success: true, data: summary })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
@@ -27,31 +29,29 @@ export const preview = async (req: AuthRequest, res: Response) => {
   try {
     const clientId = req.params.clientId as string
     const referenceDate = req.query.date as string | undefined
-    const data = await service.previewBillingPeriod(clientId, referenceDate)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const data = await service.previewBillingPeriod(clientId, referenceDate, req.user)
     res.json({ success: true, data })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
 export const getByClient = async (req: AuthRequest, res: Response) => {
   try {
     const clientId = req.params.clientId as string
-    const clientBigInt = BigInt(clientId)
-
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'No autenticado' })
     }
 
-    const level = await getClientAccessLevel(req.user, clientBigInt)
-    if (level === 'none') {
+    if ((await getClientAccessLevel(req.user, BigInt(clientId))) === 'none') {
       return res.status(403).json({ success: false, message: 'No tienes acceso a este cliente' })
     }
 
-    const summaries = await service.getAllByClient(clientId)
+    const summaries = await service.getAllByClient(clientId, req.user)
     res.json({ success: true, data: summaries })
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 500).json({ success: false, message: error.message })
   }
 }
 
@@ -62,36 +62,37 @@ export const getById = async (req: AuthRequest, res: Response) => {
     }
 
     const id = req.params.id as string
-    const summary = await service.getById(id)
+    const summary = await service.getById(id, req.user)
 
-    const level = await getClientAccessLevel(req.user, summary.client_id)
-    if (level === 'none') {
+    if ((await getClientAccessLevel(req.user, summary.client_id)) === 'none') {
       return res.status(403).json({ success: false, message: 'No tienes acceso a este resumen' })
     }
 
     res.json({ success: true, data: summary })
   } catch (error: any) {
-    res.status(404).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 404).json({ success: false, message: error.message })
   }
 }
 
 export const updateStatus = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
-    const summary = await service.updateStatus(id, req.body)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.updateStatus(id, req.body, req.user)
     res.json({ success: true, data: summary })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
 export const paySummary = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
-    const summary = await service.paySummary(id, req.body)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.paySummary(id, req.body, req.user)
     res.json({ success: true, data: summary })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }
 
@@ -102,10 +103,9 @@ export const getPdf = async (req: AuthRequest, res: Response) => {
     }
 
     const id = req.params.id as string
-    const summary = await service.getById(id)
+    const summary = await service.getById(id, req.user)
 
-    const level = await getClientAccessLevel(req.user, summary.client_id)
-    if (level === 'none') {
+    if ((await getClientAccessLevel(req.user, summary.client_id)) === 'none') {
       return res.status(403).json({ success: false, message: 'No tienes acceso a este resumen' })
     }
 
@@ -118,16 +118,17 @@ export const getPdf = async (req: AuthRequest, res: Response) => {
     )
     res.send(pdfBuffer)
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 500).json({ success: false, message: error.message })
   }
 }
 
 export const remove = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
-    await service.deleteSummary(id)
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    await service.deleteSummary(id, req.user)
     res.json({ success: true, data: null })
   } catch (error: any) {
-    res.status(400).json({ success: false, message: error.message })
+    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
   }
 }

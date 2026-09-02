@@ -81,7 +81,7 @@ describe('summaries/controller', () => {
 
       await getByClient(req, res)
 
-      expect(mockService.getAllByClient).toHaveBeenCalledWith('5')
+       expect(mockService.getAllByClient).toHaveBeenCalledWith('5', req.user)
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: [{ id: BigInt(1), client_id: BigInt(5) }],
@@ -100,7 +100,7 @@ describe('summaries/controller', () => {
 
       await getByClient(req, res)
 
-      expect(mockService.getAllByClient).toHaveBeenCalledWith('5')
+       expect(mockService.getAllByClient).toHaveBeenCalledWith('5', req.user)
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: [{ id: BigInt(1), client_id: BigInt(5) }],
@@ -119,7 +119,7 @@ describe('summaries/controller', () => {
 
       await getByClient(req, res)
 
-      expect(mockService.getAllByClient).toHaveBeenCalledWith('5')
+       expect(mockService.getAllByClient).toHaveBeenCalledWith('5', req.user)
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: [{ id: BigInt(1), client_id: BigInt(5) }],
@@ -138,7 +138,7 @@ describe('summaries/controller', () => {
 
       await getByClient(req, res)
 
-      expect(mockService.getAllByClient).toHaveBeenCalledWith('5')
+       expect(mockService.getAllByClient).toHaveBeenCalledWith('5', req.user)
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: [{ id: BigInt(1), client_id: BigInt(5) }],
