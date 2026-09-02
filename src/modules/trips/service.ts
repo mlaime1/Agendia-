@@ -1,3 +1,4 @@
+import { Prisma, payment_status_enum } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
 import { toUTC } from '../../utils/timezone';
@@ -165,9 +166,9 @@ export const tripService = {
     }
 
     let user_id: bigint
-    if (authUser.role === 'DRIVER') {
-      user_id = authUser.dbId
-    } else if (authUser.role === 'PASSENGER' || authUser.role === 'client') {
+    if (user?.role === 'ADMIN' || user?.role === 'DRIVER') {
+      user_id = user.dbId
+    } else if (user?.role === 'PASSENGER' || user?.role === 'client') {
       const driverId = await getDriverForClient(client_id)
       if (!driverId) throw new AppError('El cliente no tiene un chofer asignado', 400)
       user_id = driverId
@@ -247,11 +248,8 @@ export const tripService = {
     }
 
     // --- Si se crea dentro de un resumen cerrado y es ADMIN/DRIVER, marcar como pagado ---
-    // Importa enums Prisma
-    // (esto debe estar arriba, pero lo agrego por claridad para tu snippet)
-    // import { payment_status_enum, Prisma } from '@prisma/client';
-    let payment_status: import('@prisma/client').payment_status_enum | undefined = undefined;
-    let paid_amount: import('@prisma/client').Prisma.Decimal | undefined = undefined;
+    let payment_status: payment_status_enum | undefined = undefined;
+    let paid_amount: Prisma.Decimal | undefined = undefined;
     if (closedSummary && (user?.role === 'ADMIN' || user?.role === 'DRIVER')) {
       payment_status = payment_status_enum.paid;
       paid_amount = new Prisma.Decimal(final_price);
