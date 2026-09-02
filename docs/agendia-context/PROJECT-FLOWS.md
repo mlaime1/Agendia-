@@ -101,7 +101,30 @@ docs/
 
 ---
 
-## 6. TODO / Pendientes
+## 6. Enums de Dominio
+
+**Siempre usar los enums importados de @prisma/client, nunca strings literales.**
+
+| Enum                | Valores                                |
+|---------------------|----------------------------------------|
+| payment_status_enum | pending, partial, paid                 |
+| trip_type_enum      | ida, ida y vuelta, especial            |
+| Role                | DRIVER, ADMIN, PASSENGER               |
+| BillingCycle        | weekly, biweekly, monthly              |
+| PeriodType          | weekly, biweekly, monthly, manual      |
+
+Ejemplo de uso desde TypeScript:
+```ts
+import { payment_status_enum, trip_type_enum, Role } from '@prisma/client'
+
+let status = payment_status_enum.paid
+let tipo = trip_type_enum['ida y vuelta']
+let rol = Role.ADMIN
+```
+
+---
+
+## 7. TODO / Pendientes
 - [ ] Documentar flujos de edición/cancelación de viajes
 - [ ] Diagrama de secuencia para cierre automático mensual
 - [ ] CRUD de entidades auxiliares (rutas, precios, localidades)

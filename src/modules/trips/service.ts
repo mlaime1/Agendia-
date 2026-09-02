@@ -250,11 +250,14 @@ export const tripService = {
     }
 
     // --- Si se crea dentro de un resumen cerrado y es ADMIN/DRIVER, marcar como pagado ---
-    let payment_status = undefined;
-    let paid_amount = undefined;
+    // Importa enums Prisma
+    // (esto debe estar arriba, pero lo agrego por claridad para tu snippet)
+    // import { payment_status_enum, Prisma } from '@prisma/client';
+    let payment_status: import('@prisma/client').payment_status_enum | undefined = undefined;
+    let paid_amount: import('@prisma/client').Prisma.Decimal | undefined = undefined;
     if (closedSummary && (user?.role === 'ADMIN' || user?.role === 'DRIVER')) {
-      payment_status = 'paid';
-      paid_amount = final_price;
+      payment_status = payment_status_enum.paid;
+      paid_amount = new Prisma.Decimal(final_price);
     }
 
     return prisma.trips.create({
