@@ -1,20 +1,19 @@
 import PDFDocument from 'pdfkit'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface Payment {
-  amount: any // Prisma Decimal
+  amount: any
   method: string
 }
 
 interface Trip {
   trip_date: Date
   trip_type: string
-  final_price: any // Prisma Decimal
+  final_price: any
   has_surcharge: boolean
   special_type?: string | null
   payment_status: string
   paid_amount: any
+  routes?: { name: string | null } | null
   payments?: Payment[]
 }
 
@@ -32,470 +31,194 @@ interface Summary {
   trips: Trip[]
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+export interface RouteGroup {
+  label: string
+  count: number
+  dates: Date[]
+  total: number
+  unitPrice: number | null
+}
 
-const DAYS_ES = [
-  'Domingo',
-  'Lunes',
-  'Martes',
-  'Miércoles',
-  'Jueves',
-  'Viernes',
-  'Sábado',
-]
+const COLOR_PAPER = '#faf9f6'
+const COLOR_LINE = '#e3e1d9'
+const COLOR_INK = '#1a1a1a'
+const COLOR_TEXT_SOFT = '#6f6f6a'
+const COLOR_GOLD = '#a8791f'
+const COLOR_RED = '#b5432f'
+const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const MAX_DATES_INLINE = 8
 
 const formatDate = (date: Date) => {
   const d = new Date(date)
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${day}/${month}`
+  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
 const formatDateFull = (date: Date) => {
   const d = new Date(date)
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const year = d.getUTCFullYear()
-  return `${day}/${month}/${year}`
+  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`
 }
 
-const formatMoney = (amount: any) => {
-  const num = parseFloat(amount.toString())
-  return `$${num.toLocaleString('es-AR')}`
+const formatMoney = (amount: any) => `$${parseFloat(amount.toString()).toLocaleString('es-AR')}`
+
+const routeLabel = (trip: Trip): string => {
+  if (trip.routes?.name) return trip.routes.name
+  return trip.trip_type.toLowerCase() === 'especial'
+    ? 'Otros viajes'
+    : 'Fuera de ruta'
 }
 
-const normalizeTripType = (trip: Trip): string => {
-  if (trip.special_type) return `Especial (${trip.special_type})`
-
-  const t = trip.trip_type.toLowerCase()
-
-  if (t === 'ida') return 'Ida'
-  if (t === 'vuelta') return 'Vuelta'
-  if (t.includes('vuelta')) return 'Ida y vuelta'
-
-  return trip.trip_type
-}
-
-const paymentStatusLabel = (status: string): string => {
-  const map: Record<string, string> = {
-    pending: 'Pendiente',
-    partial: 'Parcial',
-    paid: 'Pagado',
-  }
-  return map[status] ?? status
-}
-
-const paymentStatusColor = (status: string): string => {
-  const map: Record<string, string> = {
-    pending: '#ef4444',
-    partial: '#f59e0b',
-    paid: '#10b981',
-  }
-  return map[status] ?? '#6b7280'
-}
-
-// Group trips by day → then by trip_type
-const groupTrips = (trips: Trip[]) => {
-  const byDay = new Map<string, Trip[]>()
-
-  for (const trip of trips) {
-    const d = new Date(trip.trip_date)
-    const key = d.toISOString().slice(0, 10)
-
-    if (!byDay.has(key)) byDay.set(key, [])
-    byDay.get(key)!.push(trip)
-  }
-
-  const sortedDays = Array.from(byDay.entries()).sort(([a], [b]) =>
-    a.localeCompare(b)
-  )
-
-  return sortedDays.map(([dateKey, dayTrips]) => {
-    const date = new Date(dateKey + 'T00:00:00Z')
-    const dayName = DAYS_ES[date.getUTCDay()]
-    const dateStr = formatDate(date)
-
-    const byType = new Map<string, { count: number; total: number; trips: Trip[] }>()
-
-    for (const trip of dayTrips) {
-      const type = normalizeTripType(trip)
-      const price = parseFloat(trip.final_price.toString())
-
-      if (!byType.has(type)) {
-        byType.set(type, { count: 0, total: 0, trips: [] })
-      }
-
-      const entry = byType.get(type)!
-
-      entry.count += 1
-      entry.total += price
-      entry.trips.push(trip)
-    }
-
-    const dayTotal = dayTrips.reduce(
-      (acc, t) => acc + parseFloat(t.final_price.toString()),
-      0
-    )
-
-    return {
-      dayName,
-      dateStr,
-      byType,
-      dayTotal,
-      tripCount: dayTrips.length,
-    }
-  })
-}
+const methodLabel = (method: string): string => ({
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  debit: 'Débito',
+  credit: 'Crédito',
+  other: 'Otro',
+}[method] ?? method)
 
 const collectPaymentMethods = (trips: Trip[]): string[] => {
   const methods = new Set<string>()
+  for (const trip of trips) for (const payment of trip.payments ?? []) methods.add(payment.method)
+  return [...methods]
+}
+
+export const groupTripsByRoute = (trips: Trip[]): RouteGroup[] => {
+  const groups = new Map<string, Trip[]>()
   for (const trip of trips) {
-    if (trip.payments) {
-      for (const p of trip.payments) {
-        methods.add(p.method)
+    const label = routeLabel(trip)
+    groups.set(label, [...(groups.get(label) ?? []), trip])
+  }
+
+  return [...groups.entries()]
+    .map(([label, group]) => {
+      const dates = group.map((trip) => new Date(trip.trip_date)).sort((a, b) => a.getTime() - b.getTime())
+      const prices = group.map((trip) => parseFloat(trip.final_price.toString()))
+      return {
+        label,
+        count: group.length,
+        dates,
+        total: prices.reduce((sum, price) => sum + price, 0),
+        unitPrice: prices.every((price) => price === prices[0]) ? prices[0] : null,
       }
-    }
-  }
-  return Array.from(methods)
-}
-
-const methodLabel = (method: string): string => {
-  const map: Record<string, string> = {
-    cash: 'Efectivo',
-    transfer: 'Transferencia',
-    debit: 'Débito',
-    credit: 'Crédito',
-    other: 'Otro',
-  }
-  return map[method] ?? method
-}
-
-// ─── PDF Generator ────────────────────────────────────────────────────────────
-
-export const generateSummaryPdf = (
-  summary: Summary
-): Promise<Buffer> => {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: 'A4',
-      margins: { top: 50, bottom: 50, left: 50, right: 50 },
     })
-
-    const chunks: Buffer[] = []
-
-    doc.on('data', (chunk) => chunks.push(chunk))
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
-    doc.on('error', reject)
-
-    const PAGE_WIDTH = doc.page.width
-    const MARGIN = 50
-    const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
-
-    // ── Colors ──────────────────────────────────────────────────────────────
-
-    const COLOR_PRIMARY = '#1a1a2e'
-    const COLOR_ACCENT = '#4f46e5'
-    const COLOR_LIGHT_GRAY = '#f5f5f5'
-    const COLOR_TEXT = '#374151'
-
-    // ── Header ───────────────────────────────────────────────────────────────
-
-    doc.rect(0, 0, PAGE_WIDTH, 90).fill(COLOR_PRIMARY)
-
-    doc
-      .fontSize(20)
-      .font('Helvetica-Bold')
-      .fillColor('#ffffff')
-      .text('Resumen de viajes', MARGIN, 28, {
-        width: CONTENT_WIDTH,
-      })
-
-    const periodLabel =
-      summary.period_type === 'weekly'
-        ? 'Semanal'
-        : summary.period_type === 'monthly'
-        ? 'Mensual'
-        : summary.period_type === 'biweekly'
-        ? 'Quincenal'
-        : 'Manual'
-
-    const periodStr = `${formatDateFull(summary.period_start)} al ${formatDateFull(summary.period_end)}`
-
-    doc
-      .fontSize(10)
-      .font('Helvetica')
-      .fillColor('#a5b4fc')
-      .text(`${periodLabel}  ·  ${periodStr}`, MARGIN, 56, {
-        width: CONTENT_WIDTH,
-      })
-
-    // ── Status badge ────────────────────────────────────────────────────────
-
-    const statusColors: Record<string, string> = {
-      draft: '#f59e0b',
-      sent: '#3b82f6',
-      paid: '#10b981',
-      partial: '#f97316',
-      archived: '#6b7280',
-    }
-
-    const statusLabels: Record<string, string> = {
-      draft: 'Borrador',
-      sent: 'Enviado',
-      paid: 'Abonado',
-      partial: 'Pago parcial',
-      archived: 'Archivado',
-    }
-
-    const status = summary.status ?? 'draft'
-    const badgeColor = statusColors[status] ?? '#6b7280'
-    const badgeLabel = statusLabels[status] ?? status
-
-    doc
-      .roundedRect(PAGE_WIDTH - MARGIN - 90, 28, 80, 26, 6)
-      .fill(badgeColor)
-
-    doc
-      .fontSize(9)
-      .font('Helvetica-Bold')
-      .fillColor('#ffffff')
-      .text(badgeLabel, PAGE_WIDTH - MARGIN - 90, 36, {
-        width: 80,
-        align: 'center',
-      })
-
-    // ── Info block ───────────────────────────────────────────────────────────
-
-    let y = 110
-
-    doc
-      .fontSize(11)
-      .font('Helvetica-Bold')
-      .fillColor(COLOR_TEXT)
-      .text('Cliente:', MARGIN, y)
-
-    doc
-      .font('Helvetica')
-      .text(summary.clients.nombre, MARGIN + 58, y)
-
-    y += 18
-
-    doc
-      .font('Helvetica-Bold')
-      .text('Chofer:', MARGIN, y)
-
-    doc
-      .font('Helvetica')
-      .text(summary.users.name, MARGIN + 58, y)
-
-    // Divider
-
-    y += 28
-
-    doc
-      .moveTo(MARGIN, y)
-      .lineTo(PAGE_WIDTH - MARGIN, y)
-      .strokeColor('#e5e7eb')
-      .lineWidth(1)
-      .stroke()
-
-    y += 20
-
-    // ── Days ────────────────────────────────────────────────────────────────
-
-    const groupedDays = groupTrips(summary.trips)
-
-    for (const day of groupedDays) {
-      const neededHeight =
-        30 + day.byType.size * 30 + 20
-
-      if (y + neededHeight > doc.page.height - 100) {
-        doc.addPage()
-        y = MARGIN
-      }
-
-      // Day header
-
-      doc
-        .rect(MARGIN, y, CONTENT_WIDTH, 26)
-        .fill(COLOR_LIGHT_GRAY)
-
-      doc
-        .fontSize(11)
-        .font('Helvetica-Bold')
-        .fillColor(COLOR_PRIMARY)
-        .text(
-          `${day.dayName} ${day.dateStr}`,
-          MARGIN + 10,
-          y + 7,
-          {
-            width: CONTENT_WIDTH - 20,
-          }
-        )
-
-      y += 26
-
-      // Trip rows
-
-      for (const [type, { count, total, trips: typeTrips }] of day.byType) {
-        const label =
-          count === 1
-            ? `1 viaje — ${type}`
-            : `${count} viajes — ${type}`
-
-        doc
-          .fontSize(10)
-          .font('Helvetica')
-          .fillColor(COLOR_TEXT)
-          .text(label, MARGIN + 12, y + 5, {
-            width: CONTENT_WIDTH - 120,
-          })
-
-        doc
-          .font('Helvetica-Bold')
-          .fillColor(COLOR_ACCENT)
-          .text(
-            formatMoney(total),
-            MARGIN + CONTENT_WIDTH - 100,
-            y + 5,
-            {
-              width: 100,
-              align: 'right',
-            }
-          )
-
-        y += 16
-
-        // Payment status per trip (if there are multiple trips of same type, show aggregate)
-        for (const trip of typeTrips) {
-          const stLabel = paymentStatusLabel(trip.payment_status)
-          const stColor = paymentStatusColor(trip.payment_status)
-
-          doc
-            .fontSize(8)
-            .font('Helvetica')
-            .fillColor(stColor)
-            .text(
-              `  ● ${stLabel}${trip.payment_status === 'partial' ? ` (${formatMoney(trip.paid_amount)})` : ''}`,
-              MARGIN + 12,
-              y,
-              {
-                width: CONTENT_WIDTH - 120,
-              }
-            )
-          y += 12
-        }
-
-        y += 4
-      }
-
-      y += 10
-    }
-
-    // ── Payment summary ─────────────────────────────────────────────────────
-
-    const totalPaid = parseFloat(summary.paid_amount.toString())
-    const totalDue = parseFloat(summary.total_amount.toString()) - totalPaid
-    const methods = collectPaymentMethods(summary.trips)
-
-    if (totalPaid > 0 || totalDue > 0) {
-      y += 10
-
-      doc
-        .moveTo(MARGIN, y)
-        .lineTo(PAGE_WIDTH - MARGIN, y)
-        .strokeColor('#e5e7eb')
-        .lineWidth(1)
-        .stroke()
-
-      y += 14
-
-      doc
-        .fontSize(11)
-        .font('Helvetica-Bold')
-        .fillColor(COLOR_PRIMARY)
-        .text('Resumen de pagos', MARGIN, y)
-
-      y += 20
-
-      doc
-        .fontSize(10)
-        .font('Helvetica')
-        .fillColor(COLOR_TEXT)
-        .text('Total del período:', MARGIN + 12, y)
-      doc
-        .font('Helvetica-Bold')
-        .text(formatMoney(summary.total_amount), MARGIN + 150, y)
-
-      y += 16
-
-      doc
-        .font('Helvetica')
-        .fillColor('#10b981')
-        .text('Total pagado:', MARGIN + 12, y)
-      doc
-        .font('Helvetica-Bold')
-        .text(formatMoney(summary.paid_amount), MARGIN + 150, y)
-
-      y += 16
-
-      if (totalDue > 0) {
-        doc
-          .font('Helvetica')
-          .fillColor('#ef4444')
-          .text('Saldo pendiente:', MARGIN + 12, y)
-        doc
-          .font('Helvetica-Bold')
-          .text(formatMoney(totalDue), MARGIN + 150, y)
-        y += 16
-      }
-
-      if (methods.length > 0) {
-        doc
-          .font('Helvetica')
-          .fillColor(COLOR_TEXT)
-          .text(`Métodos: ${methods.map(methodLabel).join(', ')}`, MARGIN + 12, y)
-        y += 16
-      }
-    }
-
-    // ── Footer / Totals ─────────────────────────────────────────────────────
-
-    y += 10
-
-    doc
-      .moveTo(MARGIN, y)
-      .lineTo(PAGE_WIDTH - MARGIN, y)
-      .strokeColor('#e5e7eb')
-      .lineWidth(1)
-      .stroke()
-
-    y += 14
-
-    doc
-      .rect(MARGIN, y, CONTENT_WIDTH, 60)
-      .fill(COLOR_PRIMARY)
-
-    doc
-      .fontSize(11)
-      .font('Helvetica')
-      .fillColor('#a5b4fc')
-      .text(
-        `Total de viajes: ${summary.total_trips}`,
-        MARGIN + 16,
-        y + 16
-      )
-
-    doc
-      .fontSize(16)
-      .font('Helvetica-Bold')
-      .fillColor('#ffffff')
-      .text(
-        `TOTAL A ABONAR: ${formatMoney(summary.total_amount)}`,
-        MARGIN + 16,
-        y + 34
-      )
-
-    doc.end()
-  })
+    .sort((a, b) => b.count - a.count || a.dates[0].getTime() - b.dates[0].getTime())
 }
+
+export const formatDatesList = (dates: Date[]): string => {
+  const formatted = dates.map(formatDate)
+  if (formatted.length <= MAX_DATES_INLINE) return formatted.join(' · ')
+  return `${formatted.slice(0, MAX_DATES_INLINE).join(' · ')} y ${formatted.length - MAX_DATES_INLINE} más`
+}
+
+export const generateSummaryPdf = (summary: Summary): Promise<Buffer> => new Promise((resolve, reject) => {
+  const doc = new PDFDocument({ size: 'A4', margins: { top: 50, bottom: 50, left: 50, right: 50 } })
+  const chunks: Buffer[] = []
+  doc.on('data', (chunk) => chunks.push(chunk))
+  doc.on('end', () => resolve(Buffer.concat(chunks)))
+  doc.on('error', reject)
+
+  const PAGE_WIDTH = doc.page.width
+  const PAGE_HEIGHT = doc.page.height
+  const MARGIN = 50
+  const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
+  const TOTALS_WIDTH = 110
+  const COLUMN_GAP = 20
+  const MAIN_WIDTH = CONTENT_WIDTH - TOTALS_WIDTH - COLUMN_GAP
+  const statusLabels: Record<string, string> = {
+    draft: 'Borrador', sent: 'Enviado', paid: 'Abonado', partial: 'Pago parcial', archived: 'Archivado',
+  }
+
+  const ensureSpace = (height: number, currentY: number) => {
+    if (currentY + height > PAGE_HEIGHT - MARGIN) {
+      doc.addPage()
+      return MARGIN
+    }
+    return currentY
+  }
+
+  let y = MARGIN
+  doc.fontSize(20).font('Helvetica-Bold').fillColor(COLOR_INK).text('Resumen de viajes', MARGIN, y)
+  y += 26
+  doc.fontSize(11).font('Courier').fillColor(COLOR_TEXT_SOFT)
+    .text(`${formatDateFull(summary.period_start)} – ${formatDateFull(summary.period_end)}`, MARGIN, y)
+
+  const statusText = statusLabels[summary.status] ?? summary.status
+  const tagWidth = doc.widthOfString(statusText) + 22
+  doc.rect(PAGE_WIDTH - MARGIN - tagWidth, MARGIN, tagWidth, 22).strokeColor(COLOR_LINE).stroke()
+  doc.fontSize(9).font('Helvetica').fillColor(COLOR_TEXT_SOFT)
+    .text(statusText, PAGE_WIDTH - MARGIN - tagWidth, MARGIN + 6, { width: tagWidth, align: 'center' })
+
+  y += 24
+  doc.moveTo(MARGIN, y).lineTo(PAGE_WIDTH - MARGIN, y).strokeColor(COLOR_INK).lineWidth(1.5).stroke()
+  y += 22
+
+  doc.fontSize(9).font('Helvetica').fillColor(COLOR_TEXT_SOFT).text('Cliente', MARGIN, y)
+  doc.text('Chofer', MARGIN + 220, y)
+  y += 14
+  doc.fontSize(13).font('Helvetica-Bold').fillColor(COLOR_INK).text(summary.clients.nombre, MARGIN, y)
+  doc.text(summary.users.name, MARGIN + 220, y)
+  y += 28
+  doc.moveTo(MARGIN, y).lineTo(PAGE_WIDTH - MARGIN, y).strokeColor(COLOR_LINE).lineWidth(1).stroke()
+  y += 8
+
+  for (const group of groupTripsByRoute(summary.trips)) {
+    doc.fontSize(10).font('Courier')
+    const datesText = formatDatesList(group.dates)
+    const datesHeight = doc.heightOfString(datesText, { width: MAIN_WIDTH })
+    const rowHeight = Math.max(34, 16 + datesHeight + 14)
+    y = ensureSpace(rowHeight, y)
+    const rowTop = y
+
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(COLOR_INK)
+      .text(group.label, MARGIN, rowTop, { width: MAIN_WIDTH - 55, ellipsis: true })
+    const titleWidth = Math.min(doc.widthOfString(group.label), MAIN_WIDTH - 55)
+    doc.fontSize(10).font('Helvetica').fillColor(COLOR_TEXT_SOFT)
+      .text(group.count === 1 ? '1 viaje' : `${group.count} viajes`, MARGIN + titleWidth + 8, rowTop + 1)
+    doc.fontSize(10).font('Courier').fillColor(COLOR_TEXT_SOFT)
+      .text(datesText, MARGIN, rowTop + 16, { width: MAIN_WIDTH })
+
+    const totalsX = MARGIN + MAIN_WIDTH + COLUMN_GAP
+    doc.fontSize(13).font('Courier-Bold').fillColor(COLOR_INK)
+      .text(formatMoney(group.total), totalsX, rowTop, { width: TOTALS_WIDTH, align: 'right' })
+    if (group.count > 1 && group.unitPrice !== null) {
+      doc.fontSize(9).font('Courier').fillColor(COLOR_TEXT_SOFT)
+        .text(`${formatMoney(group.unitPrice)} c/u`, totalsX, rowTop + 16, { width: TOTALS_WIDTH, align: 'right' })
+    }
+    y = rowTop + rowHeight
+    doc.moveTo(MARGIN, y).lineTo(PAGE_WIDTH - MARGIN, y).strokeColor(COLOR_LINE).lineWidth(1).stroke()
+    y += 8
+  }
+
+  const totalPaid = parseFloat(summary.paid_amount.toString())
+  const totalDue = parseFloat(summary.total_amount.toString()) - totalPaid
+  const methods = collectPaymentMethods(summary.trips)
+  y = ensureSpace(112, y) + 6
+  doc.fontSize(11).font('Helvetica-Bold').fillColor(COLOR_TEXT_SOFT).text('Resumen de pagos', MARGIN, y)
+  y += 18
+  doc.fontSize(10.5).font('Courier').fillColor(COLOR_INK)
+  const paymentRow = (label: string, value: string) => {
+    doc.text(label, MARGIN, y)
+    doc.text(value, MARGIN, y, { width: CONTENT_WIDTH, align: 'right' })
+    y += 16
+  }
+  paymentRow('Total del período', formatMoney(summary.total_amount))
+  paymentRow('Total pagado', formatMoney(summary.paid_amount))
+  if (totalDue > 0) {
+    doc.fillColor(COLOR_RED).font('Courier-Bold')
+    paymentRow('Saldo pendiente', formatMoney(totalDue))
+    doc.fillColor(COLOR_INK).font('Courier')
+  }
+  if (methods.length > 0) {
+    doc.fontSize(9.5).font('Helvetica').fillColor(COLOR_TEXT_SOFT)
+      .text(`Métodos: ${methods.map(methodLabel).join(', ')}`, MARGIN, y)
+    y += 16
+  }
+
+  y = ensureSpace(60, y) + 10
+  doc.rect(MARGIN, y, CONTENT_WIDTH, 60).fill(COLOR_INK)
+  doc.fontSize(10.5).font('Helvetica').fillColor('#b8b6ae')
+    .text(`Total de viajes: ${summary.total_trips}`, MARGIN + 16, y + 14)
+  doc.fontSize(9.5).font('Helvetica').text('Total a abonar', MARGIN + 16, y + 32)
+  doc.fontSize(19).font('Courier-Bold').fillColor(COLOR_GOLD)
+    .text(formatMoney(summary.total_amount), MARGIN, y + 14, { width: CONTENT_WIDTH - 16, align: 'right' })
+  doc.end()
+})
