@@ -41,6 +41,7 @@ const determineSummaryStatus = (total: Prisma.Decimal, paid: Prisma.Decimal): st
 }
 
 const requireFullAccess = async (user: AuthUser, clientId: bigint, action: string) => {
+  if (!user) throw new AppError(`No tienes permisos para ${action}`, 403)
   if ((await getClientAccessLevel(user, clientId)) !== 'full') {
     throw new AppError(`No tienes permisos para ${action}`, 403)
   }
@@ -78,6 +79,7 @@ export const createSummary = async (
     where: {
       client_id: clientId,
       summary_id: null,
+      payment_status: { in: ['pending', 'partial'] },
       trip_date: {
         gte: periodStart,
         lte: periodEndInclusive,
@@ -295,9 +297,15 @@ export const getById = async (id: string, user: AuthUser) => {
 // ─── Actualizar status ────────────────────────────────────────────────────────
 
 export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user: AuthUser) => {
-  const summary = await prisma.summaries.findUnique({ where: { id: BigInt(id) }, select: { client_id: true } })
-  if (!summary) throw new AppError('Resumen no encontrado', 404)
-  await requireFullAccess(user, summary.client_id, 'actualizar resúmenes')
+  const current = await prisma.summaries.findUnique({
+    where: { id: BigInt(id) },
+    select: { client_id: true, status: true },
+  })
+  if (!current) throw new AppError('Resumen no encontrado', 404)
+  await requireFullAccess(user, current.client_id, 'actualizar resúmenes')
+  if (!['draft', 'sent', 'archived'].includes(dto.status)) {
+    throw new AppError('Este estado solo puede alcanzarse mediante su flujo dedicado', 400)
+  }
   const now = new Date()
 
   const extraFields: Partial<{
@@ -342,6 +350,58 @@ export const deleteSummary = async (id: string, user: AuthUser) => {
 // ─── Pago sobre summary ───────────────────────────────────────────────────────
 // Distribuye un pago global a los viajes del summary (FIFO cronológico)
 
+export const reportPayment = async (id: string, user: AuthUser | undefined) => {
+  if (!user || (user.role !== 'client' && user.role !== 'PASSENGER')) {
+    throw new Error('Solo el cliente o un pasajero vinculado puede informar un pago')
+  }
+  const summaryId = BigInt(id)
+  const summary = await prisma.summaries.findUnique({
+    where: { id: summaryId },
+    select: { client_id: true, status: true },
+  })
+  if (!summary) throw new Error('Resumen no encontrado')
+  if ((await getClientAccessLevel(user, summary.client_id)) === 'none') {
+    throw new Error('No tienes acceso a este resumen')
+  }
+  if (summary.status !== 'sent') {
+    throw new Error('Solo se puede informar el pago de un resumen enviado')
+  }
+  return prisma.summaries.update({
+    where: { id: summaryId },
+    data: { status: 'payment_reported' },
+    include: summaryInclude,
+  })
+}
+
+export const rejectPayment = async (id: string, user: AuthUser | undefined) => {
+  const summary = await prisma.summaries.findUnique({
+    where: { id: BigInt(id) },
+    select: { client_id: true, status: true },
+  })
+  if (!summary) throw new Error('Resumen no encontrado')
+  if (!user) throw new Error('No tienes permisos para rechazar pagos')
+  await requireFullAccess(user, summary.client_id, 'rechazar pagos de este resumen')
+  if (summary.status !== 'payment_reported') throw new Error('Solo se puede rechazar un pago informado')
+  return prisma.summaries.update({
+    where: { id: BigInt(id) },
+    data: { status: 'sent' },
+    include: summaryInclude,
+  })
+}
+
+export const confirmPayment = async (id: string, dto: CreateSummaryPaymentDTO, user: AuthUser | undefined) => {
+  const summary = await prisma.summaries.findUnique({
+    where: { id: BigInt(id) },
+    select: { status: true },
+  })
+  if (!summary) throw new Error('Resumen no encontrado')
+  if (summary.status !== 'payment_reported') {
+    throw new Error('Solo se puede confirmar un pago informado')
+  }
+  if (!user) throw new Error('No tienes permisos para confirmar pagos')
+  return paySummary(id, dto, user)
+}
+
 export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user: AuthUser) => {
   const summaryId = BigInt(id)
 
@@ -363,6 +423,10 @@ export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user:
   const totalAmount = Number(summary.total_amount)
   const currentPaid = Number(summary.paid_amount)
   const paymentAmount = dto.amount
+
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    throw new Error('El monto del pago debe ser positivo')
+  }
 
   if (currentPaid + paymentAmount > totalAmount) {
     throw new Error(
@@ -467,6 +531,7 @@ export const previewBillingPeriod = async (clientId: string, referenceDate: stri
     where: {
       client_id: BigInt(clientId),
       summary_id: null,
+      payment_status: { in: ['pending', 'partial'] },
       trip_date: {
         gte: period.period_start,
         lte: (() => {

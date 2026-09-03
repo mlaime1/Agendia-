@@ -127,7 +127,7 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         type: 'object',
         required: ['status'],
         properties: {
-          status: { type: 'string', enum: ['draft', 'sent', 'paid', 'partial', 'archived'], example: 'sent' },
+          status: { type: 'string', enum: ['draft', 'sent', 'partial', 'payment_reported', 'paid', 'archived'], example: 'sent' },
         },
       },
       CreateSummaryPaymentDTO: {
@@ -644,7 +644,7 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
     '/summaries/{id}/status': {
       patch: {
         tags: ['Summaries'],
-        summary: 'Cambiar estado del resumen (draft → sent → paid → archived)',
+        summary: 'Cambiar estado administrativo del resumen (draft → sent → archived)',
         security: [{ bearerAuth: [] }],
         parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
         requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateSummaryStatusDTO' } } } },
@@ -659,6 +659,34 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
         requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateSummaryPaymentDTO' } } } },
         responses: { 200: { description: 'Pago registrado y resumen actualizado' }, 400: { description: 'Monto excede el saldo pendiente' } },
+      },
+    },
+    '/summaries/{id}/report-payment': {
+      post: {
+        tags: ['Summaries'],
+        summary: 'Informar pago de un resumen enviado (cliente o pasajero vinculado)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Pago informado; requiere confirmación del driver o admin' }, 400: { description: 'Resumen no elegible o reporte duplicado' } },
+      },
+    },
+    '/summaries/{id}/confirm-payment': {
+      post: {
+        tags: ['Summaries'],
+        summary: 'Confirmar pago informado y registrar el pago',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateSummaryPaymentDTO' } } } },
+        responses: { 200: { description: 'Pago registrado y resumen actualizado' } },
+      },
+    },
+    '/summaries/{id}/reject-payment': {
+      post: {
+        tags: ['Summaries'],
+        summary: 'Rechazar pago informado y devolver el resumen a enviado',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Reporte rechazado' } },
       },
     },
     '/payments/trip/{tripId}': {

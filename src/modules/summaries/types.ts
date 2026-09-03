@@ -14,7 +14,7 @@ export interface CreateSummaryAutoDTO {
 }
 
 export interface UpdateSummaryStatusDTO {
-  status: 'draft' | 'sent' | 'paid' | 'archived' | 'partial'
+  status: 'draft' | 'sent' | 'paid' | 'archived' | 'partial' | 'payment_reported'
 }
 
 export interface CreateSummaryPaymentDTO {
@@ -23,5 +23,5 @@ export interface CreateSummaryPaymentDTO {
   notes?: string
 }
 
-export type SummaryStatus = 'draft' | 'sent' | 'paid' | 'archived' | 'partial'
+export type SummaryStatus = 'draft' | 'sent' | 'paid' | 'archived' | 'partial' | 'payment_reported'
 export type BillingCycle = 'weekly' | 'biweekly' | 'monthly'

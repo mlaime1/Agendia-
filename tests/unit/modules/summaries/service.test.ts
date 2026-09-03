@@ -12,6 +12,9 @@ jest.mock('../../../../src/config/prisma', () => ({
     clients: {
       findUnique: jest.fn(),
     },
+    client_passengers: {
+      findUnique: jest.fn(),
+    },
     trips: {
       findMany: jest.fn(),
       count: jest.fn(),
@@ -57,6 +60,8 @@ import {
   deleteSummary,
   previewBillingPeriod,
   paySummary,
+  reportPayment,
+  rejectPayment,
 } from '../../../../src/modules/summaries/service'
 import { prisma } from '../../../../src/config/prisma'
 
@@ -106,10 +111,10 @@ describe('summaries/service', () => {
   describe('updateStatus', () => {
     it('should update status to sent with sent_at', async () => {
       const mockUpdated = { id: BigInt(1), status: 'sent' }
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'draft' })
       mockPrisma.summaries.update.mockResolvedValue(mockUpdated)
 
-       mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5) })
-       const result = await updateStatus('1', { status: 'sent' }, adminUser)
+      const result = await updateStatus('1', { status: 'sent' }, { authId: 'a', role: 'ADMIN', dbId: BigInt(1) })
 
       expect(result).toEqual(mockUpdated)
       expect(mockPrisma.summaries.update).toHaveBeenCalledWith(
@@ -123,41 +128,28 @@ describe('summaries/service', () => {
     })
 
     it('should update status to paid with paid_at', async () => {
-      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), status: 'paid' })
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'payment_reported' })
 
-       mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5) })
-       await updateStatus('1', { status: 'paid' }, adminUser)
+      await expect(updateStatus('1', { status: 'paid' }, { authId: 'a', role: 'ADMIN', dbId: BigInt(1) }))
+        .rejects.toThrow('flujo dedicado')
 
-      expect(mockPrisma.summaries.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            status: 'paid',
-            paid_at: expect.any(Date),
-          }),
-        })
-      )
+      expect(mockPrisma.summaries.update).not.toHaveBeenCalled()
     })
 
     it('should update status to partial without paid_at', async () => {
-      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), status: 'partial' })
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'sent' })
 
-       mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5) })
-       await updateStatus('1', { status: 'partial' }, adminUser)
+      await expect(updateStatus('1', { status: 'partial' }, { authId: 'a', role: 'ADMIN', dbId: BigInt(1) }))
+        .rejects.toThrow('flujo dedicado')
 
-      expect(mockPrisma.summaries.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            status: 'partial',
-          }),
-        })
-      )
+      expect(mockPrisma.summaries.update).not.toHaveBeenCalled()
     })
 
     it('should update status to archived with archived_at', async () => {
       mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), status: 'archived' })
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'sent' })
 
-       mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5) })
-       await updateStatus('1', { status: 'archived' }, adminUser)
+      await updateStatus('1', { status: 'archived' }, { authId: 'a', role: 'ADMIN', dbId: BigInt(1) })
 
       expect(mockPrisma.summaries.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -198,9 +190,10 @@ describe('summaries/service', () => {
   })
 
   describe('createSummaryManual', () => {
-    it('should create a manual summary with period_type from body', async () => {
+    it('should include pending and partial trips in a manual summary', async () => {
       mockPrisma.trips.findMany.mockResolvedValue([
-        { id: BigInt(1), final_price: 1000, paid_amount: 0 },
+        { id: BigInt(1), final_price: 1000, paid_amount: 0, payment_status: 'pending' },
+        { id: BigInt(2), final_price: 500, paid_amount: 100, payment_status: 'partial' },
       ])
       mockPrisma.summaries.create.mockResolvedValue({ id: BigInt(10) })
 
@@ -217,12 +210,21 @@ describe('summaries/service', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             period_type: 'manual',
-            status: 'draft',
+            status: 'partial',
           }),
         })
       )
     })
 
+    it('should exclude paid trips and preserve the no-trips behavior', async () => {
+      mockPrisma.trips.findMany.mockResolvedValue([])
+
+      await expect(createSummaryManual({ client_id: '5', driver_id: '1', period_start: '2025-06-01', period_end: '2025-06-01' }, adminUser))
+        .rejects.toThrow('No hay viajes sin resumen')
+      expect(mockPrisma.trips.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ payment_status: { in: ['pending', 'partial'] } }),
+      }))
+    })
     it('should use the client assigned driver instead of body driver_id', async () => {
       mockPrisma.clients.findUnique.mockResolvedValue({ driver_id: BigInt(99) })
       mockPrisma.trips.findMany.mockResolvedValue([
@@ -239,29 +241,6 @@ describe('summaries/service', () => {
       }))
     })
 
-    it('should create a manual summary with paid status if all trips are paid', async () => {
-      mockPrisma.trips.findMany.mockResolvedValue([
-        { id: BigInt(1), final_price: 1000, paid_amount: 1000 },
-      ])
-      mockPrisma.summaries.create.mockResolvedValue({ id: BigInt(10) })
-
-      const result = await createSummaryManual({
-        client_id: '5',
-        driver_id: '1',
-         period_start: '2025-06-01',
-         period_end: '2025-06-01',
-       }, adminUser)
-
-      expect(result).toEqual({ id: BigInt(10) })
-      expect(mockPrisma.summaries.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            period_type: 'manual',
-            status: 'paid',
-          }),
-        })
-      )
-    })
 
     it('should create draft summary when trips have zero price and no payments', async () => {
       mockPrisma.trips.findMany.mockResolvedValue([
@@ -351,7 +330,7 @@ describe('summaries/service', () => {
       mockPrisma.trips.update.mockResolvedValue({})
       mockPrisma.payments.create.mockResolvedValue({})
 
-       const result = await paySummary('1', { amount: 2500, method: 'cash' }, adminUser)
+      const result = await paySummary('1', { amount: 2500, method: 'cash' }, adminUser)
 
       expect(result).toEqual({ id: BigInt(1), paid_amount: 2500, status: 'partial' })
       expect(mockPrisma.trips.update).toHaveBeenCalledTimes(2)
@@ -371,7 +350,7 @@ describe('summaries/service', () => {
       mockPrisma.trips.update.mockResolvedValue({})
       mockPrisma.payments.create.mockResolvedValue({})
 
-       const result = await paySummary('1', { amount: 3000, method: 'transfer' }, adminUser)
+      const result = await paySummary('1', { amount: 3000, method: 'transfer' }, adminUser)
 
       expect(result).toEqual({ id: BigInt(1), paid_amount: 3000, status: 'paid' })
       expect(mockPrisma.summaries.update).toHaveBeenCalledWith(
@@ -395,8 +374,50 @@ describe('summaries/service', () => {
       })
 
       await expect(
-         paySummary('1', { amount: 5000, method: 'cash' }, adminUser)
+        paySummary('1', { amount: 5000, method: 'cash' }, adminUser)
       ).rejects.toThrow('excede el saldo')
+    })
+
+    it('should reject actual payments without a driver or admin user', async () => {
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), total_amount: 1, paid_amount: 0, trips: [] })
+      await expect(paySummary('1', { amount: 1, method: 'cash' }, undefined as any)).rejects.toThrow('permisos')
+    })
+  })
+
+  describe('payment report workflow', () => {
+    const clientUser = { authId: 'client-auth', role: 'client' as const, dbId: BigInt(5) }
+    const adminUser = { authId: 'admin-auth', role: 'ADMIN' as const, dbId: BigInt(1) }
+
+    it('allows the owning client to report only a sent summary', async () => {
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'sent' })
+      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), status: 'payment_reported' })
+
+      await expect(reportPayment('1', clientUser)).resolves.toEqual({ id: BigInt(1), status: 'payment_reported' })
+      expect(mockPrisma.summaries.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: { status: 'payment_reported' },
+      }))
+    })
+
+    it('rejects duplicate reports and unrelated clients', async () => {
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'payment_reported' })
+      await expect(reportPayment('1', clientUser)).rejects.toThrow('resumen enviado')
+
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'sent' })
+      ;(require('../../../../src/utils/calendarAuth').getClientAccessLevel as jest.Mock).mockResolvedValueOnce('none')
+      await expect(reportPayment('1', { ...clientUser, dbId: BigInt(99) })).rejects.toThrow('acceso')
+    })
+
+    it('allows an admin to reject a report and returns it to sent', async () => {
+      mockPrisma.summaries.findUnique.mockResolvedValue({ client_id: BigInt(5), status: 'payment_reported' })
+      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), status: 'sent' })
+
+      await expect(rejectPayment('1', adminUser)).resolves.toEqual({ id: BigInt(1), status: 'sent' })
+      expect(mockPrisma.summaries.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'sent' } }))
+    })
+
+    it('rejects payment reports from drivers', async () => {
+      await expect(reportPayment('1', { authId: 'driver-auth', role: 'DRIVER', dbId: BigInt(2) }))
+        .rejects.toThrow('cliente o un pasajero')
     })
   })
 

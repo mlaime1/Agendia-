@@ -14,6 +14,9 @@ jest.mock('../../../../src/config/prisma', () => ({
     clients: {
       findUnique: jest.fn(),
     },
+    summaries: {
+      findFirst: jest.fn(),
+    },
     client_passengers: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -61,6 +64,7 @@ const unknownUser = { authId: 'unknown-auth', role: 'UNKNOWN' as any, dbId: BigI
 describe('trips/service', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockPrisma.summaries.findFirst.mockResolvedValue(null)
   })
 
   describe('getAll', () => {
