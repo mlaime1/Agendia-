@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Resumen mensual — agrupado por ruta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #faf9f6;
+    --line: #e3e1d9;
+    --ink: #1a1a1a;
+    --text-soft: #6f6f6a;
+    --gold: #a8791f;
+    --red: #b5432f;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background:#dedcd3;
+    font-family:'Inter', sans-serif;
+    color: var(--ink);
+    display:flex;
+    justify-content:center;
+    padding:40px 16px;
+  }
+  .sheet{
+    width: 210mm;
+    min-height: 297mm;
+    background: var(--paper);
+    box-shadow: 0 20px 50px rgba(0,0,0,.2);
+    padding: 48px 50px 44px;
+  }
+
+  .header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    padding-bottom: 22px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .header h1{ font-size: 25px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.2px; }
+  .header .period{ font-family:'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--text-soft); }
+  .status-tag{ font-size: 11px; color: var(--text-soft); border: 1px solid var(--line); padding: 5px 11px; margin-top: 2px; }
+
+  .meta{ display:flex; gap: 56px; padding: 20px 0 24px; }
+  .meta .label{ font-size: 11px; color: var(--text-soft); margin-bottom: 2px; }
+  .meta .value{ font-size: 15.5px; font-weight: 600; }
+
+  .section-label{
+    font-size: 11px;
+    color: var(--text-soft);
+    text-transform: none;
+    margin: 4px 0 10px;
+  }
+
+  .routes{ border-top: 1px solid var(--line); }
+  .route{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap: 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .route-main{ flex: 1; min-width: 0; }
+  .route-title{
+    display:flex;
+    align-items:baseline;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .route-name{ font-size: 14px; font-weight: 600; }
+  .route-count{ font-size: 12px; color: var(--text-soft); }
+  .route-dates{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text-soft);
+    line-height: 1.6;
+  }
+  .route-totals{ text-align: right; flex: none; }
+  .route-price{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:700;
+    font-size: 15px;
+  }
+  .route-unit{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-soft);
+    margin-top: 2px;
+  }
+
+  .paysum{ margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .paysum h2{ font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text-soft); }
+  .paysum .row{ display:flex; justify-content:space-between; font-family:'IBM Plex Mono', monospace; font-size: 12.5px; padding: 4px 0; }
+  .paysum .row.due{ color: var(--red); font-weight:600; }
+
+  .footer{
+    margin-top: 26px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 20px 26px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .footer .count{ font-size: 12px; color:#b8b6ae; }
+  .footer .total-label{ font-size: 11px; color:#b8b6ae; margin-bottom: 3px; }
+  .footer .total{ font-family:'IBM Plex Mono', monospace; font-weight:700; font-size: 22px; color: var(--gold); }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+
+  <div class="header">
+    <div>
+      <h1>Resumen de viajes</h1>
+      <div class="period">29/06/2026 – 18/07/2026</div>
+    </div>
+    <div class="status-tag">Enviado</div>
+  </div>
+
+  <div class="meta">
+    <div>
+      <div class="label">Cliente</div>
+      <div class="value">Fede</div>
+    </div>
+    <div>
+      <div class="label">Chofer</div>
+      <div class="value">Mauro</div>
+    </div>
+  </div>
+
+  <div class="routes">
+
+    <div class="route">
+      <div class="route-main">
+        <div class="route-title">
+          <span class="route-name">Casa - Facu</span>
+          <span class="route-count">7 viajes</span>
+        </div>
+        <div class="route-dates">29/06 · 30/06 · 01/07 · 06/07 · 13/07 · 14/07 · 15/07</div>
+      </div>
+      <div class="route-totals">
+        <div class="route-price">$28.000</div>
+        <div class="route-unit">$4.000 c/u</div>
+      </div>
+    </div>
+
+    <div class="route">
+      <div class="route-main">
+        <div class="route-title">
+          <span class="route-name">Casa - Trabajo</span>
+          <span class="route-count">1 viaje</span>
+        </div>
+        <div class="route-dates">06/07</div>
+      </div>
+      <div class="route-totals">
+        <div class="route-price">$10.000</div>
+      </div>
+    </div>
+
+    <div class="route">
+      <div class="route-main">
+        <div class="route-title">
+          <span class="route-name">Casa - Bar en Bera (ida y vuelta)</span>
+          <span class="route-count">1 viaje</span>
+        </div>
+        <div class="route-dates">18/07</div>
+      </div>
+      <div class="route-totals">
+        <div class="route-price">$8.000</div>
+      </div>
+    </div>
+
+    <div class="route">
+      <div class="route-main">
+        <div class="route-title">
+          <span class="route-name">Casa - Ranelagh (ida y vuelta)</span>
+          <span class="route-count">1 viaje</span>
+        </div>
+        <div class="route-dates">04/07</div>
+      </div>
+      <div class="route-totals">
+        <div class="route-price">$7.500</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="paysum">
+    <h2>Resumen de pagos</h2>
+    <div class="row"><span>Total del período</span><span>$53.500</span></div>
+    <div class="row"><span>Total pagado</span><span>$0</span></div>
+    <div class="row due"><span>Saldo pendiente</span><span>$53.500</span></div>
+  </div>
+
+  <div class="footer">
+    <div>
+      <div class="total-label">Total de viajes: 10</div>
+      <div class="total">$53.500</div>
+    </div>
+    <div class="count">Total a abonar</div>
+  </div>
+
+</div>
+
+</body>
+</html>

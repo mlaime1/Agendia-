@@ -390,14 +390,6 @@ export const rejectPayment = async (id: string, user: AuthUser | undefined) => {
 }
 
 export const confirmPayment = async (id: string, dto: CreateSummaryPaymentDTO, user: AuthUser | undefined) => {
-  const summary = await prisma.summaries.findUnique({
-    where: { id: BigInt(id) },
-    select: { status: true },
-  })
-  if (!summary) throw new Error('Resumen no encontrado')
-  if (summary.status !== 'payment_reported') {
-    throw new Error('Solo se puede confirmar un pago informado')
-  }
   if (!user) throw new Error('No tienes permisos para confirmar pagos')
   return paySummary(id, dto, user)
 }
