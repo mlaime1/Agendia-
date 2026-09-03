@@ -61,6 +61,7 @@ import {
   previewBillingPeriod,
   paySummary,
   reportPayment,
+  confirmPayment,
   rejectPayment,
 } from '../../../../src/modules/summaries/service'
 import { prisma } from '../../../../src/config/prisma'
@@ -316,9 +317,11 @@ describe('summaries/service', () => {
   })
 
   describe('paySummary', () => {
-    it('should distribute payment across pending trips (FIFO)', async () => {
+    it.each(['sent', 'payment_reported'])('should pay a summary from %s', async (status) => {
       mockPrisma.summaries.findUnique.mockResolvedValue({
         id: BigInt(1),
+        client_id: BigInt(5),
+        status,
         total_amount: 3000,
         paid_amount: 0,
         trips: [
@@ -335,6 +338,26 @@ describe('summaries/service', () => {
       expect(result).toEqual({ id: BigInt(1), paid_amount: 2500, status: 'partial' })
       expect(mockPrisma.trips.update).toHaveBeenCalledTimes(2)
       expect(mockPrisma.payments.create).toHaveBeenCalledTimes(2)
+    })
+
+    it('allows an owning driver to pay directly from sent', async () => {
+      const driverUser = { authId: 'driver-auth', role: 'DRIVER' as const, dbId: BigInt(2) }
+      mockPrisma.summaries.findUnique.mockResolvedValue({
+        id: BigInt(1),
+        client_id: BigInt(5),
+        status: 'sent',
+        total_amount: 1000,
+        paid_amount: 0,
+        trips: [
+          { id: BigInt(10), final_price: 1000, paid_amount: 0, payment_status: 'pending', trip_date: new Date('2025-06-01') },
+        ],
+      })
+      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), paid_amount: 1000, status: 'paid' })
+      mockPrisma.trips.update.mockResolvedValue({})
+      mockPrisma.payments.create.mockResolvedValue({})
+
+      await expect(paySummary('1', { amount: 1000, method: 'cash' }, driverUser))
+        .resolves.toEqual({ id: BigInt(1), paid_amount: 1000, status: 'paid' })
     })
 
     it('should mark summary as paid when full amount is covered', async () => {
@@ -395,6 +418,30 @@ describe('summaries/service', () => {
       await expect(reportPayment('1', clientUser)).resolves.toEqual({ id: BigInt(1), status: 'payment_reported' })
       expect(mockPrisma.summaries.update).toHaveBeenCalledWith(expect.objectContaining({
         data: { status: 'payment_reported' },
+      }))
+      expect(mockPrisma.trips.update).not.toHaveBeenCalled()
+      expect(mockPrisma.payments.create).not.toHaveBeenCalled()
+    })
+
+    it('allows the payment confirmation alias without a prior report', async () => {
+      mockPrisma.summaries.findUnique.mockResolvedValue({
+        id: BigInt(1),
+        client_id: BigInt(5),
+        status: 'sent',
+        total_amount: 3000,
+        paid_amount: 0,
+        trips: [
+          { id: BigInt(10), final_price: 3000, paid_amount: 0, payment_status: 'pending', trip_date: new Date('2025-06-01') },
+        ],
+      })
+      mockPrisma.summaries.update.mockResolvedValue({ id: BigInt(1), paid_amount: 1500, status: 'partial' })
+      mockPrisma.trips.update.mockResolvedValue({})
+      mockPrisma.payments.create.mockResolvedValue({})
+
+      await expect(confirmPayment('1', { amount: 1500, method: 'transfer' }, adminUser))
+        .resolves.toEqual({ id: BigInt(1), paid_amount: 1500, status: 'partial' })
+      expect(mockPrisma.payments.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ amount: 1500 }),
       }))
     })
 
