@@ -77,8 +77,9 @@ export const getById = async (req: AuthRequest, res: Response) => {
 
 export const updateStatus = async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
     const id = req.params.id as string
-    const summary = await service.updateStatus(id, req.body)
+    const summary = await service.updateStatus(id, req.body, req.user)
     res.json({ success: true, data: summary })
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message })
@@ -87,8 +88,39 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
 
 export const paySummary = async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
     const id = req.params.id as string
-    const summary = await service.paySummary(id, req.body)
+    const summary = await service.paySummary(id, req.body, req.user)
+    res.json({ success: true, data: summary })
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const reportPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.reportPayment(req.params.id as string, req.user)
+    res.json({ success: true, data: summary })
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const confirmPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.confirmPayment(req.params.id as string, req.body, req.user)
+    res.json({ success: true, data: summary })
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const rejectPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const summary = await service.rejectPayment(req.params.id as string, req.user)
     res.json({ success: true, data: summary })
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message })

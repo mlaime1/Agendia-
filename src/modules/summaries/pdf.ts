@@ -124,7 +124,7 @@ export const generateSummaryPdf = (summary: Summary): Promise<Buffer> => new Pro
   const COLUMN_GAP = 20
   const MAIN_WIDTH = CONTENT_WIDTH - TOTALS_WIDTH - COLUMN_GAP
   const statusLabels: Record<string, string> = {
-    draft: 'Borrador', sent: 'Enviado', paid: 'Abonado', partial: 'Pago parcial', archived: 'Archivado',
+    draft: 'Borrador', sent: 'Enviado', paid: 'Abonado', partial: 'Pago parcial', payment_reported: 'Pago informado', archived: 'Archivado',
   }
 
   const ensureSpace = (height: number, currentY: number) => {
