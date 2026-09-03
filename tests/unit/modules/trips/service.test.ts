@@ -14,6 +14,9 @@ jest.mock('../../../../src/config/prisma', () => ({
     clients: {
       findUnique: jest.fn(),
     },
+    summaries: {
+      findFirst: jest.fn(),
+    },
     client_passengers: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -56,24 +59,17 @@ const mockCalendarAuth = calendarAuth as jest.Mocked<typeof calendarAuth>
 const driverUser = { authId: 'driver-auth', role: 'DRIVER' as const, dbId: BigInt(1) }
 const passengerUser = { authId: 'pass-auth', role: 'PASSENGER' as const, dbId: BigInt(10) }
 const clientUser = { authId: 'client-auth', role: 'client' as const, dbId: BigInt(5) }
+const unknownUser = { authId: 'unknown-auth', role: 'UNKNOWN' as any, dbId: BigInt(99) }
 
 describe('trips/service', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockPrisma.summaries.findFirst.mockResolvedValue(null)
   })
 
   describe('getAll', () => {
-    it('should return all trips when no user provided', async () => {
-      const mockTrips = [{ id: BigInt(1), trip_type: 'ida' }]
-      mockPrisma.trips.findMany.mockResolvedValue(mockTrips)
-
-      const result = await tripService.getAll()
-
-      expect(result).toEqual(mockTrips)
-      expect(mockPrisma.trips.findMany).toHaveBeenCalledWith({
-        include: { clients: true, routes: true, rates: true, users: true },
-        orderBy: { trip_date: 'desc' },
-      })
+    it('should reject missing auth', async () => {
+      await expect(tripService.getAll()).rejects.toThrow('Usuario no autorizado')
     })
 
     it('should filter by driver trips and client trips for DRIVER role', async () => {
@@ -85,12 +81,7 @@ describe('trips/service', () => {
 
       expect(result).toEqual(mockTrips)
       expect(mockPrisma.trips.findMany).toHaveBeenCalledWith({
-        where: {
-          OR: [
-            { user_id: BigInt(1) },
-            { client_id: { in: [BigInt(5), BigInt(6)] } },
-          ],
-        },
+        where: { client_id: { in: [BigInt(5), BigInt(6)] } },
         include: { clients: true, routes: true, rates: true, users: true },
         orderBy: { trip_date: 'desc' },
       })
@@ -106,6 +97,10 @@ describe('trips/service', () => {
 
       expect(result).toEqual(mockTrips)
       expect(mockCalendarAuth.getPassengerClients).toHaveBeenCalledWith(BigInt(10))
+      expect(mockCalendarAuth.getDriverForClient).not.toHaveBeenCalled()
+      expect(mockPrisma.trips.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { client_id: { in: [BigInt(5)] } },
+      }))
     })
 
     it('should filter trips by client_id for client role', async () => {
@@ -124,17 +119,25 @@ describe('trips/service', () => {
   })
 
   describe('getById', () => {
-    it('should return a trip by id', async () => {
+    it('should return a trip by id for an authenticated user', async () => {
       const mockTrip = { id: BigInt(1), client_id: BigInt(5) }
       mockPrisma.trips.findUnique.mockResolvedValue(mockTrip)
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
 
-      const result = await tripService.getById(BigInt(1))
+      const result = await tripService.getById(BigInt(1), driverUser)
 
       expect(result).toEqual(mockTrip)
       expect(mockPrisma.trips.findUnique).toHaveBeenCalledWith({
         where: { id: BigInt(1) },
         include: { clients: true, routes: true, rates: true, users: true },
       })
+    })
+
+    it('should deny unknown roles in reads', async () => {
+      mockPrisma.trips.findMany.mockResolvedValue([])
+
+      await expect(tripService.getAll(unknownUser)).resolves.toEqual([])
+      expect(mockPrisma.trips.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: [] } } }))
     })
 
     it('should enforce access level when user provided', async () => {
@@ -153,6 +156,13 @@ describe('trips/service', () => {
       const result = await tripService.getById(BigInt(1), passengerUser)
 
       expect(result).toBeNull()
+    })
+
+    it('should not allow a reassigned driver to read a trip through its old user_id', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), user_id: BigInt(1) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('none')
+
+      await expect(tripService.getById(BigInt(1), driverUser)).resolves.toBeNull()
     })
   })
 
@@ -418,6 +428,27 @@ describe('trips/service', () => {
       }, driverUser)).rejects.toThrow('Tarifa no encontrada')
     })
 
+    it('should reject a route owned by another client', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true, client_id: BigInt(99) })
+
+      await expect(tripService.create({
+        client_id: '5', route_id: '3', trip_date: '2025-06-01', trip_type: 'ida',
+      }, driverUser)).rejects.toThrow('no pertenece a este cliente')
+    })
+
+    it('should reject a rate owned by another client', async () => {
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true, client_id: BigInt(5) })
+      mockPrisma.rates.findUnique.mockResolvedValue({ id: BigInt(25), client_id: BigInt(99), base_price: 6000 })
+
+      await expect(tripService.create({
+        client_id: '5', route_id: '3', rate_id: '25', trip_date: '2025-06-01', trip_type: 'ida',
+      }, driverUser)).rejects.toThrow('no pertenece a este cliente')
+    })
+
     it('should throw if route is inactive', async () => {
       mockPrisma.routes.findUnique.mockResolvedValue({ is_active: false })
 
@@ -513,6 +544,7 @@ describe('trips/service', () => {
       mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
       mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.rates.findUnique.mockResolvedValue({ id: BigInt(20), client_id: BigInt(5) })
       mockPrisma.trips.update.mockResolvedValue({ id: BigInt(1), final_price: 7000 })
 
       const result = await tripService.update(BigInt(1), { final_price: 7000 }, driverUser)
@@ -572,6 +604,28 @@ describe('trips/service', () => {
       mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
 
       await expect(tripService.update(BigInt(1), { trip_type: 'ida' }, driverUser)).rejects.toThrow('Los viajes ida/ida y vuelta requieren route_id')
+    })
+
+    it('should reject a foreign route on update', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.routes.findUnique.mockResolvedValue({ is_active: true, client_id: BigInt(99) })
+
+      await expect(tripService.update(BigInt(1), { route_id: '4' }, driverUser)).rejects.toThrow('no pertenece a este cliente')
+    })
+
+    it('should reject a foreign rate on update', async () => {
+      mockPrisma.trips.findUnique.mockResolvedValue({ id: BigInt(1), client_id: BigInt(5), trip_type: 'ida', route_id: BigInt(3), rate_id: BigInt(20) })
+      mockCalendarAuth.getClientAccessLevel.mockResolvedValue('full')
+      mockPrisma.clients.findUnique.mockResolvedValue({ timezone: 'America/Argentina/Buenos_Aires' })
+      mockPrisma.rates.findUnique.mockResolvedValue({ id: BigInt(99), client_id: BigInt(99) })
+
+      await expect(tripService.update(BigInt(1), { rate_id: '99' }, driverUser)).rejects.toThrow('no pertenece a este cliente')
+    })
+
+    it('should reject omitted auth', async () => {
+      await expect(tripService.update(BigInt(1), {}, undefined)).rejects.toThrow('Usuario no autorizado')
     })
   })
 

@@ -2,6 +2,8 @@ import { BillingCycle } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { isValidIANA } from '../../utils/timezone'
 import { CreateClientDTO, UpdateClientDTO, UpdateBillingConfigDTO } from './types'
+import { AuthUser, getClientAccessLevel } from '../../utils/calendarAuth'
+import { AppError } from '../../utils/AppError'
 
 const clientInclude = {
   routes: true,
@@ -57,15 +59,30 @@ const validateBillingConfig = (
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-export const getAll = async () => {
+export const getAll = async (user: AuthUser) => {
+  if (user.role === 'ADMIN') {
+    return prisma.clients.findMany({ orderBy: { nombre: 'asc' } })
+  }
+
+  const where = user.role === 'DRIVER'
+    ? { driver_id: user.dbId }
+    : user.role === 'PASSENGER'
+      ? { client_passengers: { some: { user_id: user.dbId } } }
+      : { id: user.dbId }
+
   return prisma.clients.findMany({
+    where,
     orderBy: { nombre: 'asc' },
   })
 }
 
-export const getById = async (id: string) => {
+export const getById = async (id: string, user: AuthUser) => {
+  const clientId = BigInt(id)
+  if ((await getClientAccessLevel(user, clientId)) === 'none') {
+    throw new AppError('No tienes acceso a este cliente', 403)
+  }
   const client = await prisma.clients.findUnique({
-    where: { id: BigInt(id) },
+    where: { id: clientId },
     include: clientInclude,
   })
 
@@ -73,7 +90,10 @@ export const getById = async (id: string) => {
   return client
 }
 
-export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
+export const create = async (dto: CreateClientDTO, user: AuthUser) => {
+  if (user.role !== 'ADMIN' && user.role !== 'DRIVER') {
+    throw new AppError('No tienes permisos para crear clientes', 403)
+  }
   validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
 
   const tz = dto.timezone ?? 'America/Argentina/Buenos_Aires'
@@ -92,12 +112,15 @@ export const create = async (dto: CreateClientDTO, driverId?: bigint) => {
         ? new Date(dto.billing_start_date)
         : null,
       timezone: tz,
-      ...(driverId && { driver_id: driverId }),
+      ...(user.role === 'DRIVER' && { driver_id: user.dbId }),
     },
   })
 }
 
-export const update = async (id: string, dto: UpdateClientDTO) => {
+export const update = async (id: string, dto: UpdateClientDTO, user: AuthUser) => {
+  if ((await getClientAccessLevel(user, BigInt(id))) !== 'full') {
+    throw new AppError('No tienes permisos para modificar este cliente', 403)
+  }
   // Si viene algún campo de billing, validar la configuración completa
   if (dto.billing_cycle) {
     validateBillingConfig(dto.billing_cycle, dto.billing_day, dto.billing_start_date)
@@ -127,7 +150,10 @@ export const update = async (id: string, dto: UpdateClientDTO) => {
 // ─── Billing config ───────────────────────────────────────────────────────────
 // Endpoint dedicado para el panel de configuración de facturación
 
-export const updateBillingConfig = async (id: string, dto: UpdateBillingConfigDTO) => {
+export const updateBillingConfig = async (id: string, dto: UpdateBillingConfigDTO, user: AuthUser) => {
+  if ((await getClientAccessLevel(user, BigInt(id))) !== 'full') {
+    throw new AppError('No tienes permisos para modificar este cliente', 403)
+  }
   const cycle = normalizeBillingCycle(dto.billing_cycle)
 
   validateBillingConfig(cycle, dto.billing_day, dto.billing_start_date)
@@ -146,8 +172,12 @@ export const updateBillingConfig = async (id: string, dto: UpdateBillingConfigDT
   })
 }
 
-export const remove = async (id: string) => {
+export const remove = async (id: string, user: AuthUser) => {
   const clientId = BigInt(id)
+
+  if ((await getClientAccessLevel(user, clientId)) !== 'full') {
+    throw new AppError('No tienes permisos para eliminar este cliente', 403)
+  }
 
   // Verificar que no tenga summaries pendientes de cobro
   const pendingSummaries = await prisma.summaries.count({

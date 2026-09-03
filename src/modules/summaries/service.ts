@@ -8,6 +8,7 @@ import {
 } from './types'
 import { calculateBillingPeriod } from './billingPeriod'
 import { AuthUser, getClientAccessLevel } from '../../utils/calendarAuth'
+import { AppError } from '../../utils/AppError'
 
 const normalizeBillingCycle = (value: string): string => {
   const map: Record<string, string> = {
@@ -37,6 +38,29 @@ const determineSummaryStatus = (total: Prisma.Decimal, paid: Prisma.Decimal): st
   if (paid.greaterThan(0) && paid.greaterThanOrEqualTo(total)) return 'paid'
   if (paid.greaterThan(0)) return 'partial'
   return 'draft'
+}
+
+const requireFullAccess = async (user: AuthUser, clientId: bigint, action: string) => {
+  if (!user) throw new AppError(`No tienes permisos para ${action}`, 403)
+  if ((await getClientAccessLevel(user, clientId)) !== 'full') {
+    throw new AppError(`No tienes permisos para ${action}`, 403)
+  }
+}
+
+const requireReadAccess = async (user: AuthUser, clientId: bigint, action: string) => {
+  if ((await getClientAccessLevel(user, clientId)) === 'none') {
+    throw new AppError(`No tienes acceso para ${action}`, 403)
+  }
+}
+
+const getClientDriver = async (clientId: bigint): Promise<bigint> => {
+  const client = await prisma.clients.findUnique({
+    where: { id: clientId },
+    select: { driver_id: true },
+  })
+  if (!client) throw new AppError('Cliente no encontrado', 404)
+  if (!client.driver_id) throw new AppError('El cliente no tiene un chofer asignado', 400)
+  return client.driver_id
 }
 
 export const createSummary = async (
@@ -104,9 +128,10 @@ export const createSummary = async (
 // ─── Crear manual ─────────────────────────────────────────────────────────────
 // El usuario elige el rango libremente desde el panel
 
-export const createSummaryManual = async (dto: CreateSummaryManualDTO) => {
+export const createSummaryManual = async (dto: CreateSummaryManualDTO, user: AuthUser) => {
   const clientId = BigInt(dto.client_id)
-  const driverId = BigInt(dto.driver_id)
+  await requireFullAccess(user, clientId, 'crear resúmenes')
+  const driverId = await getClientDriver(clientId)
   const periodStart = new Date(dto.period_start)
   const periodEnd = new Date(dto.period_end)
   const periodType = dto.period_type ?? 'manual'
@@ -119,7 +144,8 @@ export const createSummaryManual = async (dto: CreateSummaryManualDTO) => {
 
 export const createSummaryAuto = async (
   clientId: string,
-  dto: CreateSummaryAutoDTO
+  dto: CreateSummaryAutoDTO,
+  user: AuthUser,
 ) => {
   const clientBigInt = BigInt(clientId)
 
@@ -129,6 +155,7 @@ export const createSummaryAuto = async (
       billing_cycle: true,
       billing_day: true,
       billing_start_date: true,
+      driver_id: true,
     },
   })
 
@@ -137,6 +164,8 @@ export const createSummaryAuto = async (
   if (!client.billing_cycle) {
     throw new Error('El cliente no tiene configurado un ciclo de facturación')
   }
+
+  await requireFullAccess(user, clientBigInt, 'crear resúmenes')
 
   const referenceDate = dto.reference_date
     ? new Date(dto.reference_date)
@@ -170,7 +199,7 @@ export const createSummaryAuto = async (
 
   return createSummary(
     clientBigInt,
-    BigInt(dto.driver_id),
+    client.driver_id ?? await getClientDriver(clientBigInt),
     period_start,
     period_end,
     period_type,
@@ -245,7 +274,8 @@ export const processAutoSummary = async (clientId: bigint) => {
 
 // ─── Consultas ────────────────────────────────────────────────────────────────
 
-export const getAllByClient = async (clientId: string) => {
+export const getAllByClient = async (clientId: string, user: AuthUser) => {
+  await requireReadAccess(user, BigInt(clientId), 'ver resúmenes de este cliente')
   return prisma.summaries.findMany({
     where: { client_id: BigInt(clientId) },
     include: summaryInclude,
@@ -253,38 +283,29 @@ export const getAllByClient = async (clientId: string) => {
   })
 }
 
-export const getById = async (id: string) => {
+export const getById = async (id: string, user: AuthUser) => {
   const summary = await prisma.summaries.findUnique({
     where: { id: BigInt(id) },
     include: summaryInclude,
   })
 
   if (!summary) throw new Error('Resumen no encontrado')
+  await requireReadAccess(user, summary.client_id, 'ver este resumen')
   return summary
 }
 
 // ─── Actualizar status ────────────────────────────────────────────────────────
 
-const assertDriverOrAdmin = async (user: AuthUser | undefined, clientId: bigint) => {
-  if (!user || (user.role !== 'DRIVER' && user.role !== 'ADMIN')) {
-    throw new Error('No tienes permisos para modificar pagos o estados')
-  }
-  if (user.role === 'DRIVER' && (await getClientAccessLevel(user, clientId)) !== 'full') {
-    throw new Error('No tienes permisos para este resumen')
-  }
-}
-
-export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user?: AuthUser) => {
+export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user: AuthUser) => {
   const current = await prisma.summaries.findUnique({
     where: { id: BigInt(id) },
     select: { client_id: true, status: true },
   })
-  if (!current) throw new Error('Resumen no encontrado')
-  await assertDriverOrAdmin(user, current.client_id)
+  if (!current) throw new AppError('Resumen no encontrado', 404)
+  await requireFullAccess(user, current.client_id, 'actualizar resúmenes')
   if (!['draft', 'sent', 'archived'].includes(dto.status)) {
-    throw new Error('Este estado solo puede alcanzarse mediante su flujo dedicado')
+    throw new AppError('Este estado solo puede alcanzarse mediante su flujo dedicado', 400)
   }
-
   const now = new Date()
 
   const extraFields: Partial<{
@@ -309,8 +330,11 @@ export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user
 
 // ─── Eliminar ─────────────────────────────────────────────────────────────────
 
-export const deleteSummary = async (id: string) => {
+export const deleteSummary = async (id: string, user: AuthUser) => {
   const summaryId = BigInt(id)
+  const summary = await prisma.summaries.findUnique({ where: { id: summaryId }, select: { client_id: true } })
+  if (!summary) throw new AppError('Resumen no encontrado', 404)
+  await requireFullAccess(user, summary.client_id, 'eliminar resúmenes')
 
   // Desvincular viajes antes de borrar
   await prisma.trips.updateMany({
@@ -336,10 +360,7 @@ export const reportPayment = async (id: string, user: AuthUser | undefined) => {
     select: { client_id: true, status: true },
   })
   if (!summary) throw new Error('Resumen no encontrado')
-  if (user.role === 'client' && user.dbId !== summary.client_id) {
-    throw new Error('No tienes acceso a este resumen')
-  }
-  if (user.role === 'PASSENGER' && (await getClientAccessLevel(user, summary.client_id)) !== 'full') {
+  if ((await getClientAccessLevel(user, summary.client_id)) === 'none') {
     throw new Error('No tienes acceso a este resumen')
   }
   if (summary.status !== 'sent') {
@@ -358,7 +379,8 @@ export const rejectPayment = async (id: string, user: AuthUser | undefined) => {
     select: { client_id: true, status: true },
   })
   if (!summary) throw new Error('Resumen no encontrado')
-  await assertDriverOrAdmin(user, summary.client_id)
+  if (!user) throw new Error('No tienes permisos para rechazar pagos')
+  await requireFullAccess(user, summary.client_id, 'rechazar pagos de este resumen')
   if (summary.status !== 'payment_reported') throw new Error('Solo se puede rechazar un pago informado')
   return prisma.summaries.update({
     where: { id: BigInt(id) },
@@ -376,10 +398,11 @@ export const confirmPayment = async (id: string, dto: CreateSummaryPaymentDTO, u
   if (summary.status !== 'payment_reported') {
     throw new Error('Solo se puede confirmar un pago informado')
   }
+  if (!user) throw new Error('No tienes permisos para confirmar pagos')
   return paySummary(id, dto, user)
 }
 
-export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user?: AuthUser) => {
+export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user: AuthUser) => {
   const summaryId = BigInt(id)
 
   const summary = await prisma.summaries.findUnique({
@@ -395,7 +418,7 @@ export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user?
   })
 
   if (!summary) throw new Error('Resumen no encontrado')
-  await assertDriverOrAdmin(user, summary.client_id)
+  await requireFullAccess(user, summary.client_id, 'registrar pagos de este resumen')
 
   const totalAmount = Number(summary.total_amount)
   const currentPaid = Number(summary.paid_amount)
@@ -478,7 +501,8 @@ export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user?
 // ─── Preview del período activo ───────────────────────────────────────────────
 // Util para mostrar en el panel antes de confirmar la generación automática
 
-export const previewBillingPeriod = async (clientId: string, referenceDate?: string) => {
+export const previewBillingPeriod = async (clientId: string, referenceDate: string | undefined, user: AuthUser) => {
+  await requireReadAccess(user, BigInt(clientId), 'ver la facturación de este cliente')
   const client = await prisma.clients.findUnique({
     where: { id: BigInt(clientId) },
     select: {
@@ -507,6 +531,7 @@ export const previewBillingPeriod = async (clientId: string, referenceDate?: str
     where: {
       client_id: BigInt(clientId),
       summary_id: null,
+      payment_status: { in: ['pending', 'partial'] },
       trip_date: {
         gte: period.period_start,
         lte: (() => {
