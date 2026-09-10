@@ -7,8 +7,10 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Semantic name for the transported person. Physical table is still `clients` (see @@map), so no migration is required.
+/// Scalar FK columns keep their physical/wire name `client_id`; only relation fields use `passenger`.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model clients {
+model passenger {
   id                 BigInt      @id(map: "cliente_pkey") @default(autoincrement())
   created_at         DateTime    @default(now()) @db.Timestamptz(6)
   nombre             String      @db.VarChar
@@ -17,16 +19,18 @@ model clients {
   billing_day        Int?
   billing_start_date DateTime?   @db.Date
   timezone           String      @default("America/Argentina/Buenos_Aires") @db.VarChar
-  auth_id            String?     @unique
+  auth_id            String?     @unique(map: "clients_auth_id_key")
   driver_id          BigInt?
   rates              rates[]
   routes             routes[]
   summaries          summaries[]
   trips              trips[]
-  users              users?      @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  driver             users?      @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   invitation_codes   invitation_codes[]
-  client_passengers  client_passengers[]
+  client_access      passenger_client_access[]
   service_schedules  service_schedules[]
+
+  @@map("clients")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -40,7 +44,7 @@ model rates {
   start_date      DateTime?      @db.Date
   end_date        DateTime?      @db.Date
   trip_type       trip_type_enum @default(ida)
-  clients         clients?       @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  passenger       passenger?     @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   routes          routes?        @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trips           trips[]
 }
@@ -59,15 +63,15 @@ model route_stops {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model routes {
-  id          BigInt        @id @default(autoincrement())
-  created_at  DateTime      @default(now()) @db.Timestamptz(6)
-  name        String?       @db.VarChar
-  client_id   BigInt?
-  is_active   Boolean       @default(true)
-  deleted_at  DateTime?     @db.Timestamptz(6)
+  id         BigInt        @id @default(autoincrement())
+  created_at DateTime      @default(now()) @db.Timestamptz(6)
+  name       String?       @db.VarChar
+  client_id  BigInt?
+  is_active  Boolean       @default(true)
+  deleted_at DateTime?     @db.Timestamptz(6)
   rates       rates[]
   route_stops route_stops[]
-  clients     clients?      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  passenger   passenger?   @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trips       trips[]
 
   @@index([is_active])
@@ -91,7 +95,7 @@ model summaries {
   archived_at  DateTime? @db.Timestamptz(6)
   whatsapp_msg String?
   notes        String?   @db.VarChar
-  clients      clients   @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  passenger    passenger @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users        users     @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trips        trips[]
 }
@@ -120,7 +124,7 @@ model trips {
   end_lng          Decimal?       @db.Decimal(10, 7)
   payment_status   payment_status_enum @default(pending)
   paid_amount      Decimal        @default(0) @db.Decimal
-  clients          clients        @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  passenger        passenger      @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   rates            rates?         @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   routes           routes?        @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   summaries        summaries?     @relation(fields: [summary_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -164,8 +168,8 @@ model users {
   role       Role        @default(DRIVER)
   summaries  summaries[]
   trips      trips[]
-  clients    clients[]
-  client_passengers  client_passengers[]
+  passengers passenger[]
+  client_access      passenger_client_access[]
   invitations_created invitation_codes[] @relation("InvitationCreator")
   invitations_used   invitation_codes[] @relation("InvitationUsedBy")
 }
@@ -182,10 +186,11 @@ enum payment_status_enum {
   paid
 }
 
+/// Physical enum still stores the value PASSENGER (see @map). No migration required.
 enum Role {
   DRIVER
   ADMIN
-  PASSENGER
+  CLIENT @map("PASSENGER")
 }
 
 enum BillingCycle {
@@ -211,24 +216,28 @@ model invitation_codes {
   used_at     DateTime? @db.Timestamptz(6)
   used_by_id  BigInt?
 
-  driver      users    @relation("InvitationCreator", fields: [driver_id], references: [id])
-  client      clients? @relation(fields: [client_id], references: [id])
-  used_by     users?   @relation("InvitationUsedBy", fields: [used_by_id], references: [id])
+  driver      users     @relation("InvitationCreator", fields: [driver_id], references: [id])
+  passenger   passenger? @relation(fields: [client_id], references: [id])
+  used_by     users?    @relation("InvitationUsedBy", fields: [used_by_id], references: [id])
 
   @@index([code])
   @@index([driver_id])
 }
 
-model client_passengers {
-  client_id BigInt
-  user_id   BigInt
-  added_at  DateTime @default(now()) @db.Timestamptz(6)
+/// Bridge between an authenticated account (users) and the passenger it can manage.
+/// Physical columns are `client_id` (-> passenger) and `user_id` (-> users); see @map.
+/// `client_user_id` is used instead of `client_id` because Prisma forbids a field name colliding with the mapped column of another field.
+model passenger_client_access {
+  passenger_id   BigInt   @map("client_id")
+  client_user_id BigInt   @map("user_id")
+  added_at       DateTime @default(now()) @db.Timestamptz(6)
 
-  client clients @relation(fields: [client_id], references: [id], onDelete: Cascade)
-  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  passenger passenger @relation(fields: [passenger_id], references: [id], onDelete: Cascade, map: "client_passengers_client_id_fkey")
+  client    users     @relation(fields: [client_user_id], references: [id], onDelete: Cascade, map: "client_passengers_user_id_fkey")
 
-  @@id([client_id, user_id])
-  @@index([user_id])
+  @@id([passenger_id, client_user_id], map: "client_passengers_pkey")
+  @@index([client_user_id], map: "client_passengers_user_id_idx")
+  @@map("client_passengers")
 }
 
 model service_schedules {
@@ -242,7 +251,7 @@ model service_schedules {
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   updated_at  DateTime  @updatedAt @db.Timestamptz(6)
 
-  client      clients   @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  passenger   passenger @relation(fields: [client_id], references: [id], onDelete: Cascade)
 
   @@unique([client_id, day_of_week, pickup_time])
   @@index([client_id])

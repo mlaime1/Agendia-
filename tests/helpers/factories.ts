@@ -27,7 +27,7 @@ export const createTestClient = async (overrides: Record<string, unknown> = {}) 
   clientCounter++
   const uniqueId = `test-client-${clientCounter}-${Date.now()}`
 
-  return prisma.clients.create({
+  return prisma.passenger.create({
     data: {
       nombre: overrides.nombre ?? `Test Client ${clientCounter}`,
       phone: overrides.phone ?? 1111111111 + clientCounter,

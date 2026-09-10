@@ -7,7 +7,7 @@ export function startSummaryScheduler() {
   cron.schedule('0 1 * * *', async () => {
     console.log('[scheduler] Iniciando generación automática de resúmenes...')
 
-    const clients = await prisma.clients.findMany({
+    const clients = await prisma.passenger.findMany({
       select: { id: true },
     })
 

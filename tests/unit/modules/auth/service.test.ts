@@ -3,10 +3,10 @@ jest.mock('../../../../src/config/prisma', () => ({
     users: {
       upsert: jest.fn(),
     },
-    clients: {
+    passenger: {
       create: jest.fn(),
     },
-    client_passengers: {
+    passenger_client_access: {
       create: jest.fn(),
     },
     invitation_codes: {
@@ -70,8 +70,8 @@ describe('auth/service', () => {
       mockPrisma.$transaction.mockImplementation(async (cb: any) => {
         const tx = {
           users: { upsert: jest.fn().mockResolvedValue({ id: BigInt(10) }) },
-          clients: { create: jest.fn().mockResolvedValue({ id: BigInt(5) }) },
-          client_passengers: { create: jest.fn() },
+          passenger: { create: jest.fn().mockResolvedValue({ id: BigInt(5) }) },
+          passenger_client_access: { create: jest.fn() },
           invitation_codes: { update: jest.fn().mockResolvedValue({}) },
         }
         return cb(tx)
@@ -116,8 +116,8 @@ describe('auth/service', () => {
       mockPrisma.$transaction.mockImplementation(async (cb: any) => {
         const tx = {
           users: { upsert: jest.fn().mockResolvedValue({ id: BigInt(20) }) },
-          clients: { create: jest.fn() },
-          client_passengers: { create: jest.fn() },
+          passenger: { create: jest.fn() },
+          passenger_client_access: { create: jest.fn() },
           invitation_codes: { update: jest.fn().mockResolvedValue({}) },
         }
         capturedTx = tx
@@ -130,10 +130,10 @@ describe('auth/service', () => {
 
       await register({ ...passengerPayload, invitation_code: 'DEF456' })
 
-      expect(capturedTx.client_passengers.create).toHaveBeenCalledWith({
-        data: { client_id: BigInt(5), user_id: BigInt(20) },
+      expect(capturedTx.passenger_client_access.create).toHaveBeenCalledWith({
+        data: { passenger_id: BigInt(5), client_user_id: BigInt(20) },
       })
-      expect(capturedTx.clients.create).not.toHaveBeenCalled()
+      expect(capturedTx.passenger.create).not.toHaveBeenCalled()
     })
 
     it('should create new client when invitation has no client_id', async () => {
@@ -151,8 +151,8 @@ describe('auth/service', () => {
       mockPrisma.$transaction.mockImplementation(async (cb: any) => {
         const tx = {
           users: { upsert: jest.fn().mockResolvedValue({ id: BigInt(30) }) },
-          clients: { create: jest.fn().mockResolvedValue({ id: BigInt(10) }) },
-          client_passengers: { create: jest.fn() },
+          passenger: { create: jest.fn().mockResolvedValue({ id: BigInt(10) }) },
+          passenger_client_access: { create: jest.fn() },
           invitation_codes: { update: jest.fn().mockResolvedValue({}) },
         }
         capturedTx = tx
@@ -168,12 +168,13 @@ describe('auth/service', () => {
       expect(mockSupabase.auth.admin.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ phone: '5411223344' })
       )
-      expect(capturedTx.clients.create).toHaveBeenCalledWith(
+      expect(capturedTx.passenger.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             nombre: 'Juan Pérez',
             phone: '5411223344',
             driver_id: BigInt(1),
+            auth_id: 'auth-uuid-789',
           }),
         })
       )

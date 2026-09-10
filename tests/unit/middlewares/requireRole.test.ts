@@ -55,12 +55,12 @@ describe('requireRole', () => {
     expect(mockNext).not.toHaveBeenCalled()
   })
 
-  it('should call next() for PASSENGER role', () => {
+  it('should call next() for CLIENT role', () => {
     const req = {
-      user: { authId: 'auth-1', role: 'PASSENGER', dbId: BigInt(1) },
+      user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(1) },
     } as unknown as AuthRequest
 
-    const middleware = requireRole('PASSENGER')
+    const middleware = requireRole('CLIENT')
     middleware(req, mockRes, mockNext)
 
     expect(mockNext).toHaveBeenCalled()

@@ -5,6 +5,11 @@ import { AppError } from '../../utils/AppError'
 import { sanitizePhone } from '../../utils/phone'
 import { UpdateUserDTO } from './types'
 
+// Wire compatibility: the internal CLIENT role still serializes as the legacy 'PASSENGER' value.
+function toWireRole(role: $Enums.Role): string {
+  return role === 'CLIENT' ? 'PASSENGER' : role
+}
+
 export async function getMe(authId: string, phone?: string) {
   const user = await prisma.users.findUnique({
     where: { auth_id: authId },
@@ -19,31 +24,33 @@ export async function getMe(authId: string, phone?: string) {
   })
 
   if (user) {
-    const clients = user.role === 'PASSENGER'
-      ? await prisma.client_passengers.findMany({
-          where: { user_id: user.id },
+    const clients = user.role === 'CLIENT'
+      ? await prisma.passenger_client_access.findMany({
+          where: { client_user_id: user.id },
           select: {
-            client_id: true,
-            client: { select: { nombre: true, driver_id: true } },
+            passenger_id: true,
+            passenger: { select: { nombre: true, driver_id: true } },
           },
         })
       : []
 
     return {
       ...user,
+      role: toWireRole(user.role),
       phone: phone ?? null,
-      type: user.role.toLowerCase() as 'driver' | 'admin' | 'passenger',
+      // Wire contract: the CLIENT role still serializes as 'passenger'.
+      type: (user.role === 'CLIENT' ? 'passenger' : user.role.toLowerCase()) as 'driver' | 'admin' | 'passenger',
       ...(clients.length > 0 ? {
         clients: clients.map((c) => ({
-          id: c.client_id.toString(),
-          nombre: c.client.nombre,
-          driver_id: c.client.driver_id?.toString(),
+          id: c.passenger_id.toString(),
+          nombre: c.passenger.nombre,
+          driver_id: c.passenger.driver_id?.toString(),
         })),
       } : {}),
     }
   }
 
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { auth_id: authId },
     select: {
       id: true,
@@ -65,8 +72,8 @@ export async function getMe(authId: string, phone?: string) {
   throw new AppError('Usuario no encontrado', 404)
 }
 
-export async function updateMe(dbId: bigint, authId: string, role: $Enums.Role | 'client', dto: UpdateUserDTO) {
-  if (role === 'client') {
+export async function updateMe(dbId: bigint, authId: string, role: $Enums.Role, dto: UpdateUserDTO) {
+  if (role === 'CLIENT') {
     throw new AppError('Los clientes no pueden editar su perfil con este endpoint', 400)
   }
 
@@ -102,7 +109,7 @@ export async function updateMe(dbId: bigint, authId: string, role: $Enums.Role |
 }
 
 export async function getAll() {
-  return prisma.users.findMany({
+  const users = await prisma.users.findMany({
     select: {
       id: true,
       created_at: true,
@@ -113,4 +120,5 @@ export async function getAll() {
     },
     orderBy: { created_at: 'desc' }
   })
+  return users.map((user) => ({ ...user, role: toWireRole(user.role) }))
 }

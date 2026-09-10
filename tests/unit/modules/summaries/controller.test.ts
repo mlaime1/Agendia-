@@ -51,7 +51,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { clientId: '5' },
-        user: { authId: 'auth-1', role: 'client', dbId: BigInt(99) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(99) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -75,7 +75,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { clientId: '5' },
-        user: { authId: 'auth-1', role: 'client', dbId: BigInt(5) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(5) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -94,7 +94,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { clientId: '5' },
-        user: { authId: 'auth-1', role: 'PASSENGER', dbId: BigInt(7) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(7) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -164,7 +164,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { id: '1' },
-        user: { authId: 'auth-1', role: 'client', dbId: BigInt(99) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(99) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -185,7 +185,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { id: '1' },
-        user: { authId: 'auth-1', role: 'client', dbId: BigInt(5) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(5) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -231,7 +231,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { id: '1' },
-        user: { authId: 'auth-1', role: 'PASSENGER', dbId: BigInt(99) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(99) },
       } as unknown as AuthRequest
       const res = mockRes()
 
@@ -254,7 +254,7 @@ describe('summaries/controller', () => {
 
       const req = {
         params: { id: '1' },
-        user: { authId: 'auth-1', role: 'PASSENGER', dbId: BigInt(7) },
+        user: { authId: 'auth-1', role: 'CLIENT', dbId: BigInt(7) },
       } as unknown as AuthRequest
       const res = mockRes()
 

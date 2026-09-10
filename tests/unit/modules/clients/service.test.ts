@@ -1,6 +1,6 @@
 jest.mock('../../../../src/config/prisma', () => ({
   prisma: {
-    clients: {
+    passenger: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -8,7 +8,7 @@ jest.mock('../../../../src/config/prisma', () => ({
       delete: jest.fn(),
       count: jest.fn(),
     },
-    client_passengers: {
+    passenger_client_access: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
@@ -37,34 +37,45 @@ describe('clients/service', () => {
   describe('getAll', () => {
     it('should return all clients ordered by name', async () => {
       const mockClients = [{ id: BigInt(1), nombre: 'Client A' }]
-      mockPrisma.clients.findMany.mockResolvedValue(mockClients)
+      mockPrisma.passenger.findMany.mockResolvedValue(mockClients)
 
        const result = await getAll(adminUser)
 
       expect(result).toEqual(mockClients)
-      expect(mockPrisma.clients.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.passenger.findMany).toHaveBeenCalledWith({
         orderBy: { nombre: 'asc' },
       })
     })
 
     it('should restrict drivers to their assigned clients', async () => {
-      mockPrisma.clients.findMany.mockResolvedValue([])
+      mockPrisma.passenger.findMany.mockResolvedValue([])
 
       await getAll({ authId: 'driver', role: 'DRIVER', dbId: BigInt(42) })
 
-      expect(mockPrisma.clients.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.passenger.findMany).toHaveBeenCalledWith({
         where: { driver_id: BigInt(42) },
         orderBy: { nombre: 'asc' },
       })
     })
 
     it('should restrict passengers to linked clients', async () => {
-      mockPrisma.clients.findMany.mockResolvedValue([])
+      mockPrisma.passenger.findMany.mockResolvedValue([])
 
-      await getAll({ authId: 'passenger', role: 'PASSENGER', dbId: BigInt(7) })
+      await getAll({ authId: 'passenger', role: 'CLIENT', dbId: BigInt(7) })
 
-      expect(mockPrisma.clients.findMany).toHaveBeenCalledWith({
-        where: { client_passengers: { some: { user_id: BigInt(7) } } },
+      expect(mockPrisma.passenger.findMany).toHaveBeenCalledWith({
+        where: { client_access: { some: { client_user_id: BigInt(7) } } },
+        orderBy: { nombre: 'asc' },
+      })
+    })
+
+    it('should restrict a self-managed passenger to their own row', async () => {
+      mockPrisma.passenger.findMany.mockResolvedValue([])
+
+      await getAll({ authId: 'passenger', role: 'CLIENT', dbId: BigInt(7), passengerId: BigInt(7) })
+
+      expect(mockPrisma.passenger.findMany).toHaveBeenCalledWith({
+        where: { id: BigInt(7) },
         orderBy: { nombre: 'asc' },
       })
     })
@@ -73,7 +84,7 @@ describe('clients/service', () => {
   describe('getById', () => {
     it('should return a client by id', async () => {
       const mockClient = { id: BigInt(1), nombre: 'Test Client' }
-      mockPrisma.clients.findUnique.mockResolvedValue(mockClient)
+      mockPrisma.passenger.findUnique.mockResolvedValue(mockClient)
 
        const result = await getById('1', adminUser)
 
@@ -81,13 +92,13 @@ describe('clients/service', () => {
     })
 
     it('should throw if client not found', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue(null)
+      mockPrisma.passenger.findUnique.mockResolvedValue(null)
 
        await expect(getById('999', adminUser)).rejects.toThrow('Cliente no encontrado')
     })
 
     it('should reject a client user reading another client', async () => {
-      await expect(getById('999', { authId: 'client', role: 'client', dbId: BigInt(5) }))
+      await expect(getById('999', { authId: 'client', role: 'CLIENT', dbId: BigInt(5) }))
         .rejects.toThrow('No tienes acceso')
     })
   })
@@ -95,7 +106,7 @@ describe('clients/service', () => {
   describe('create', () => {
     it('should create a client with valid billing config', async () => {
       const mockClient = { id: BigInt(1), nombre: 'New Client', billing_cycle: 'monthly' }
-      mockPrisma.clients.create.mockResolvedValue(mockClient)
+      mockPrisma.passenger.create.mockResolvedValue(mockClient)
 
        const result = await create({
         nombre: 'New Client',
@@ -105,7 +116,7 @@ describe('clients/service', () => {
        }, adminUser)
 
       expect(result).toEqual(mockClient)
-      expect(mockPrisma.clients.create).toHaveBeenCalled()
+      expect(mockPrisma.passenger.create).toHaveBeenCalled()
     })
 
     it('should throw for weekly billing without billing_day', async () => {
@@ -162,7 +173,7 @@ describe('clients/service', () => {
 
     it('should pass driverId when provided', async () => {
       const mockClient = { id: BigInt(1), nombre: 'New Client', driver_id: BigInt(42) }
-      mockPrisma.clients.create.mockResolvedValue(mockClient)
+      mockPrisma.passenger.create.mockResolvedValue(mockClient)
 
       const result = await create({
         nombre: 'New Client',
@@ -172,7 +183,7 @@ describe('clients/service', () => {
        }, { authId: 'driver', role: 'DRIVER', dbId: BigInt(42) })
 
       expect(result).toEqual(mockClient)
-      expect(mockPrisma.clients.create).toHaveBeenCalledWith(
+      expect(mockPrisma.passenger.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ driver_id: BigInt(42) }),
         })
@@ -183,7 +194,7 @@ describe('clients/service', () => {
   describe('update', () => {
     it('should update a client', async () => {
       const mockClient = { id: BigInt(1), nombre: 'Updated' }
-      mockPrisma.clients.update.mockResolvedValue(mockClient)
+      mockPrisma.passenger.update.mockResolvedValue(mockClient)
 
        const result = await update('1', { nombre: 'Updated' }, adminUser)
 
@@ -197,29 +208,29 @@ describe('clients/service', () => {
     })
 
     it('should reject passenger mutations', async () => {
-      mockPrisma.client_passengers.findUnique.mockResolvedValue({ client_id: BigInt(1) })
+      mockPrisma.passenger_client_access.findUnique.mockResolvedValue({ passenger_id: BigInt(1) })
 
       await expect(update('1', { nombre: 'Blocked' }, {
-        authId: 'passenger', role: 'PASSENGER', dbId: BigInt(7),
+        authId: 'passenger', role: 'CLIENT', dbId: BigInt(7),
       })).rejects.toThrow('No tienes permisos')
-      expect(mockPrisma.clients.update).not.toHaveBeenCalled()
+      expect(mockPrisma.passenger.update).not.toHaveBeenCalled()
     })
   })
 
   describe('updateBillingConfig', () => {
     it('should update billing config with valid data', async () => {
-      mockPrisma.clients.update.mockResolvedValue({ id: BigInt(1) })
+      mockPrisma.passenger.update.mockResolvedValue({ id: BigInt(1) })
 
        await updateBillingConfig('1', {
         billing_cycle: 'monthly',
         billing_day: 15,
        }, adminUser)
 
-      expect(mockPrisma.clients.update).toHaveBeenCalled()
+      expect(mockPrisma.passenger.update).toHaveBeenCalled()
     })
 
     it('should clear billing_start_date for non-biweekly cycles', async () => {
-      mockPrisma.clients.update.mockResolvedValue({ id: BigInt(1) })
+      mockPrisma.passenger.update.mockResolvedValue({ id: BigInt(1) })
 
        await updateBillingConfig('1', {
         billing_cycle: 'monthly',
@@ -227,7 +238,7 @@ describe('clients/service', () => {
         billing_start_date: '2025-01-01',
        }, adminUser)
 
-      expect(mockPrisma.clients.update).toHaveBeenCalledWith(
+      expect(mockPrisma.passenger.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             billing_start_date: null,
@@ -240,7 +251,7 @@ describe('clients/service', () => {
   describe('remove', () => {
     it('should delete a client without pending summaries', async () => {
       mockPrisma.summaries.count.mockResolvedValue(0)
-      mockPrisma.clients.delete.mockResolvedValue({ id: BigInt(1) })
+      mockPrisma.passenger.delete.mockResolvedValue({ id: BigInt(1) })
 
        const result = await remove('1', adminUser)
 

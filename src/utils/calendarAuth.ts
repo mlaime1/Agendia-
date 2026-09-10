@@ -5,8 +5,9 @@ export type AccessLevel = 'full' | 'read-only' | 'none'
 
 export interface AuthUser {
   authId: string
-  role: $Enums.Role | 'client'
+  role: $Enums.Role
   dbId: bigint
+  passengerId?: bigint
 }
 
 export async function isBillingActive(clientId: bigint): Promise<boolean> {
@@ -31,7 +32,7 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
   }
 
   if (user.role === 'DRIVER') {
-    const client = await prisma.clients.findUnique({
+    const client = await prisma.passenger.findUnique({
       where: { id: clientId },
       select: { driver_id: true },
     })
@@ -44,23 +45,61 @@ export async function getClientAccessLevel(user: AuthUser, clientId: bigint): Pr
     return 'full'
   }
 
-  if (user.role === 'PASSENGER') {
-    const link = await prisma.client_passengers.findUnique({
-      where: { client_id_user_id: { client_id: clientId, user_id: user.dbId } },
+  if (user.role === 'CLIENT') {
+    // Self-managed passenger: the auth account is linked directly to the passenger row.
+    if (user.passengerId != null && user.passengerId === clientId) {
+      return 'read-only'
+    }
+
+    const link = await prisma.passenger_client_access.findUnique({
+      where: {
+        passenger_id_client_user_id: {
+          passenger_id: clientId,
+          client_user_id: user.dbId,
+        },
+      },
     })
     if (link) return 'read-only'
     return 'none'
   }
 
-  if (user.role === 'client') {
-    return user.dbId === clientId ? 'read-only' : 'none'
-  }
-
   return 'none'
 }
 
+export async function canCreateTrips(user: AuthUser, passengerId: bigint): Promise<boolean> {
+  if (user.role === 'ADMIN') {
+    return true
+  }
+
+  if (user.role === 'DRIVER') {
+    const client = await prisma.passenger.findUnique({
+      where: { id: passengerId },
+      select: { driver_id: true },
+    })
+    return !!client && client.driver_id === user.dbId
+  }
+
+  if (user.role === 'CLIENT') {
+    if (user.passengerId != null && user.passengerId === passengerId) {
+      return true
+    }
+
+    const link = await prisma.passenger_client_access.findUnique({
+      where: {
+        passenger_id_client_user_id: {
+          passenger_id: passengerId,
+          client_user_id: user.dbId,
+        },
+      },
+    })
+    return !!link
+  }
+
+  return false
+}
+
 export async function getDriverClients(driverId: bigint): Promise<bigint[]> {
-  const clients = await prisma.clients.findMany({
+  const clients = await prisma.passenger.findMany({
     where: { driver_id: driverId },
     select: { id: true },
   })
@@ -68,15 +107,15 @@ export async function getDriverClients(driverId: bigint): Promise<bigint[]> {
 }
 
 export async function getPassengerClients(userId: bigint): Promise<bigint[]> {
-  const links = await prisma.client_passengers.findMany({
-    where: { user_id: userId },
-    select: { client_id: true },
+  const links = await prisma.passenger_client_access.findMany({
+    where: { client_user_id: userId },
+    select: { passenger_id: true },
   })
-  return links.map((l) => l.client_id)
+  return links.map((l) => l.passenger_id)
 }
 
 export async function getDriverForClient(clientId: bigint): Promise<bigint | null> {
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: clientId },
     select: { driver_id: true },
   })

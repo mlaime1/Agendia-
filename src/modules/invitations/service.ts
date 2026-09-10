@@ -9,7 +9,7 @@ function generateCode(): string {
 
 export async function create(driverId: bigint, dto: CreateInvitationDTO) {
   if (dto.client_id) {
-    const client = await prisma.clients.findUnique({
+    const client = await prisma.passenger.findUnique({
       where: { id: BigInt(dto.client_id) },
       select: { driver_id: true },
     })
@@ -35,14 +35,20 @@ export async function create(driverId: bigint, dto: CreateInvitationDTO) {
 }
 
 export async function findByDriver(driverId: bigint) {
-  return prisma.invitation_codes.findMany({
+  const invitations = await prisma.invitation_codes.findMany({
     where: { driver_id: driverId },
     orderBy: { created_at: 'desc' },
     include: {
-      client: { select: { id: true, nombre: true } },
+      passenger: { select: { id: true, nombre: true } },
       used_by: { select: { id: true, name: true } },
     },
   })
+
+  // Wire contract: the passenger relation is exposed as `client`.
+  return invitations.map(({ passenger, ...rest }) => ({
+    ...rest,
+    client: passenger,
+  }))
 }
 
 export async function validateCode(code: string) {

@@ -2,9 +2,20 @@ import { Prisma, payment_status_enum } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
 import { toUTC } from '../../utils/timezone';
-import { AuthUser, getClientAccessLevel, getDriverClients, getPassengerClients, getDriverForClient } from '../../utils/calendarAuth';
+import { AuthUser, getClientAccessLevel, canCreateTrips, getDriverClients, getPassengerClients, getDriverForClient } from '../../utils/calendarAuth';
 import { normalizeTripType } from '../../utils/tripType';
 import { CreateTripDto, UpdateTripDto } from './types';
+
+// Wire contract: the passenger relation is exposed as `clients`.
+function toWireTrip(trip: any): any {
+  if (!trip) return trip;
+  const { passenger, ...rest } = trip;
+  return { ...rest, clients: passenger };
+}
+
+function toWireTrips(trips: any[]): any[] {
+  return trips.map(toWireTrip);
+}
 
 async function findOrCreateRateForTrip(client_id: bigint, route_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
   // 1. Look for rate specific to this route
@@ -77,50 +88,47 @@ export const tripService = {
 
     if (authUser.role === 'DRIVER') {
       const clientIds = await getDriverClients(authUser.dbId)
-      return prisma.trips.findMany({
+      const trips = await prisma.trips.findMany({
         where: { client_id: { in: clientIds } },
-        include: { clients: true, routes: true, rates: true, users: true },
+        include: { passenger: true, routes: true, rates: true, users: true },
         orderBy: { trip_date: 'desc' },
       })
+      return toWireTrips(trips)
     }
 
-    if (authUser.role === 'PASSENGER') {
-      const clientIds = await getPassengerClients(authUser.dbId)
+    if (authUser.role === 'CLIENT') {
+      const clientIds = authUser.passengerId != null
+        ? [authUser.passengerId]
+        : await getPassengerClients(authUser.dbId)
 
-      return prisma.trips.findMany({
+      const trips = await prisma.trips.findMany({
         where: { client_id: { in: clientIds } },
-        include: { clients: true, routes: true, rates: true, users: true },
+        include: { passenger: true, routes: true, rates: true, users: true },
         orderBy: { trip_date: 'desc' },
       })
+      return toWireTrips(trips)
     }
 
-    if (authUser.role === 'client') {
-      return prisma.trips.findMany({
-        where: { client_id: authUser.dbId },
-        include: { clients: true, routes: true, rates: true, users: true },
-        orderBy: { trip_date: 'desc' },
-      })
-    }
-
-    return prisma.trips.findMany({
+    const trips = await prisma.trips.findMany({
       where: { id: { in: [] } },
-      include: { clients: true, routes: true, rates: true, users: true },
+      include: { passenger: true, routes: true, rates: true, users: true },
       orderBy: { trip_date: 'desc' },
     })
+    return toWireTrips(trips)
   },
 
   async getById(id: bigint, user?: AuthUser) {
     const authUser = requireAuth(user)
     const trip = await prisma.trips.findUnique({
       where: { id },
-      include: { clients: true, routes: true, rates: true, users: true },
+      include: { passenger: true, routes: true, rates: true, users: true },
     })
     if (!trip) return null
 
     const level = await getClientAccessLevel(authUser, trip.client_id)
     if (level === 'none') return null
 
-    return trip
+    return toWireTrip(trip)
   },
 
   async getByClient(client_id: bigint, user?: AuthUser) {
@@ -159,16 +167,15 @@ export const tripService = {
     const client_id = BigInt(data.client_id)
     const trip_type = normalizeTripType(data.trip_type)
 
-    const level = await getClientAccessLevel(authUser, client_id)
-    if (level !== 'full') {
-      console.log(`[trips:create] denied for user ${authUser.dbId} role ${authUser.role} on client ${client_id}: level=${level}`)
+    if (!(await canCreateTrips(authUser, client_id))) {
+      console.log(`[trips:create] denied for user ${authUser.dbId} role ${authUser.role} on client ${client_id}`)
       throw new AppError('No tienes permisos para crear viajes para este cliente', 403)
     }
 
     let user_id: bigint
     if (user?.role === 'ADMIN' || user?.role === 'DRIVER') {
       user_id = user.dbId
-    } else if (user?.role === 'PASSENGER' || user?.role === 'client') {
+    } else if (user?.role === 'CLIENT') {
       const driverId = await getDriverForClient(client_id)
       if (!driverId) throw new AppError('El cliente no tiene un chofer asignado', 400)
       user_id = driverId
@@ -177,7 +184,7 @@ export const tripService = {
     }
 
     // Obtener timezone del cliente para interpretar trip_date correctamente
-    const client = await prisma.clients.findUnique({
+    const client = await prisma.passenger.findUnique({
       where: { id: client_id },
       select: { timezone: true },
     })
@@ -198,7 +205,7 @@ export const tripService = {
     });
 
     if (closedSummary) {
-      if (user?.role === 'client' || user?.role === 'PASSENGER') {
+      if (user?.role === 'CLIENT') {
         throw new AppError('No se pueden crear viajes en fechas ya abonadas/archivadas', 400);
       }
       // ADMIN o DRIVER pueden crear, pero el viaje debe entrar como abonado pagado
@@ -255,7 +262,7 @@ export const tripService = {
       paid_amount = new Prisma.Decimal(final_price);
     }
 
-    return prisma.trips.create({
+    const trip = await prisma.trips.create({
       data: {
         user_id,
         client_id,
@@ -271,8 +278,9 @@ export const tripService = {
         ...(payment_status && { payment_status }),
         ...(paid_amount !== undefined && { paid_amount }),
       },
-      include: { clients: true, routes: true, rates: true },
+      include: { passenger: true, routes: true, rates: true },
     });
+    return toWireTrip(trip)
   },
 
   async update(id: bigint, data: UpdateTripDto, user?: AuthUser) {
@@ -288,7 +296,7 @@ export const tripService = {
       throw new AppError('No tienes permisos para modificar este viaje', 403)
     }
 
-    const client = await prisma.clients.findUnique({
+    const client = await prisma.passenger.findUnique({
       where: { id: trip.client_id },
       select: { timezone: true },
     })
@@ -387,15 +395,16 @@ export const tripService = {
       throw new AppError('No tienes permisos para iniciar este viaje', 403)
     }
 
-    return prisma.trips.update({
+    const updatedTrip = await prisma.trips.update({
       where: { id },
       data: {
         started_at: new Date(),
         start_lat: lat,
         start_lng: lng,
       },
-      include: { clients: true, routes: true, rates: true },
+      include: { passenger: true, routes: true, rates: true },
     });
+    return toWireTrip(updatedTrip)
   },
 
   async addStop(id: bigint, lat: number, lng: number, user?: AuthUser) {
@@ -433,14 +442,15 @@ export const tripService = {
       throw new AppError('No tienes permisos para finalizar este viaje', 403)
     }
 
-    return prisma.trips.update({
+    const updatedTrip = await prisma.trips.update({
       where: { id },
       data: {
         ended_at: new Date(),
         end_lat: lat,
         end_lng: lng,
       },
-      include: { clients: true, routes: true, rates: true },
+      include: { passenger: true, routes: true, rates: true },
     });
+    return toWireTrip(updatedTrip)
   },
 };

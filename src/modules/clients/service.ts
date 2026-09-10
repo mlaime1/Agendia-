@@ -61,16 +61,19 @@ const validateBillingConfig = (
 
 export const getAll = async (user: AuthUser) => {
   if (user.role === 'ADMIN') {
-    return prisma.clients.findMany({ orderBy: { nombre: 'asc' } })
+    return prisma.passenger.findMany({ orderBy: { nombre: 'asc' } })
   }
 
   const where = user.role === 'DRIVER'
     ? { driver_id: user.dbId }
-    : user.role === 'PASSENGER'
-      ? { client_passengers: { some: { user_id: user.dbId } } }
+    : user.role === 'CLIENT'
+      ? (user.passengerId != null
+          // Self-managed passenger fallback: only its own passenger row.
+          ? { id: user.passengerId }
+          : { client_access: { some: { client_user_id: user.dbId } } })
       : { id: user.dbId }
 
-  return prisma.clients.findMany({
+  return prisma.passenger.findMany({
     where,
     orderBy: { nombre: 'asc' },
   })
@@ -81,7 +84,7 @@ export const getById = async (id: string, user: AuthUser) => {
   if ((await getClientAccessLevel(user, clientId)) === 'none') {
     throw new AppError('No tienes acceso a este cliente', 403)
   }
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: clientId },
     include: clientInclude,
   })
@@ -101,7 +104,7 @@ export const create = async (dto: CreateClientDTO, user: AuthUser) => {
     throw new Error(`timezone no es un identificador IANA válido: ${tz}`)
   }
 
-  return prisma.clients.create({
+  return prisma.passenger.create({
     data: {
       created_at: new Date(),
       nombre: dto.nombre,
@@ -130,7 +133,7 @@ export const update = async (id: string, dto: UpdateClientDTO, user: AuthUser) =
     throw new Error(`timezone no es un identificador IANA válido: ${dto.timezone}`)
   }
 
-  return prisma.clients.update({
+  return prisma.passenger.update({
     where: { id: BigInt(id) },
     data: {
       ...(dto.nombre && { nombre: dto.nombre }),
@@ -158,7 +161,7 @@ export const updateBillingConfig = async (id: string, dto: UpdateBillingConfigDT
 
   validateBillingConfig(cycle, dto.billing_day, dto.billing_start_date)
 
-  return prisma.clients.update({
+  return prisma.passenger.update({
     where: { id: BigInt(id) },
     data: {
       billing_cycle: cycle,
@@ -193,7 +196,7 @@ export const remove = async (id: string, user: AuthUser) => {
     )
   }
 
-  return prisma.clients.delete({
+  return prisma.passenger.delete({
     where: { id: clientId },
   })
 }
