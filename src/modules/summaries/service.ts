@@ -21,7 +21,7 @@ const normalizeBillingCycle = (value: string): string => {
 }
 
 const summaryInclude = {
-  clients: true,
+  passenger: true,
   users: true,
   trips: {
     include: {
@@ -30,6 +30,17 @@ const summaryInclude = {
     },
     orderBy: { trip_date: 'asc' as const },
   },
+}
+
+// Wire contract: the passenger relation is exposed as `clients`.
+function toWireSummary(summary: any): any {
+  if (!summary) return summary
+  const { passenger, ...rest } = summary
+  return { ...rest, clients: passenger }
+}
+
+function toWireSummaries(summaries: any[]): any[] {
+  return summaries.map(toWireSummary)
 }
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -54,7 +65,7 @@ const requireReadAccess = async (user: AuthUser, clientId: bigint, action: strin
 }
 
 const getClientDriver = async (clientId: bigint): Promise<bigint> => {
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: clientId },
     select: { driver_id: true },
   })
@@ -122,7 +133,7 @@ export const createSummary = async (
     include: summaryInclude,
   })
 
-  return summary
+  return toWireSummary(summary)
 }
 
 // ─── Crear manual ─────────────────────────────────────────────────────────────
@@ -149,7 +160,7 @@ export const createSummaryAuto = async (
 ) => {
   const clientBigInt = BigInt(clientId)
 
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: clientBigInt },
     select: {
       billing_cycle: true,
@@ -211,7 +222,7 @@ export const createSummaryAuto = async (
 // Usa el driver_id del cliente (no de un request manual)
 
 export const processAutoSummary = async (clientId: bigint) => {
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: clientId },
     select: {
       id: true,
@@ -276,11 +287,12 @@ export const processAutoSummary = async (clientId: bigint) => {
 
 export const getAllByClient = async (clientId: string, user: AuthUser) => {
   await requireReadAccess(user, BigInt(clientId), 'ver resúmenes de este cliente')
-  return prisma.summaries.findMany({
+  const summaries = await prisma.summaries.findMany({
     where: { client_id: BigInt(clientId) },
     include: summaryInclude,
     orderBy: { period_start: 'desc' },
   })
+  return toWireSummaries(summaries)
 }
 
 export const getById = async (id: string, user: AuthUser) => {
@@ -291,7 +303,7 @@ export const getById = async (id: string, user: AuthUser) => {
 
   if (!summary) throw new Error('Resumen no encontrado')
   await requireReadAccess(user, summary.client_id, 'ver este resumen')
-  return summary
+  return toWireSummary(summary)
 }
 
 // ─── Actualizar status ────────────────────────────────────────────────────────
@@ -318,7 +330,7 @@ export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user
   if (dto.status === 'paid') extraFields.paid_at = now
   if (dto.status === 'archived') extraFields.archived_at = now
 
-  return prisma.summaries.update({
+  const updated = await prisma.summaries.update({
     where: { id: BigInt(id) },
     data: {
       status: dto.status,
@@ -326,6 +338,7 @@ export const updateStatus = async (id: string, dto: UpdateSummaryStatusDTO, user
     },
     include: summaryInclude,
   })
+  return toWireSummary(updated)
 }
 
 // ─── Eliminar ─────────────────────────────────────────────────────────────────
@@ -351,7 +364,7 @@ export const deleteSummary = async (id: string, user: AuthUser) => {
 // Distribuye un pago global a los viajes del summary (FIFO cronológico)
 
 export const reportPayment = async (id: string, user: AuthUser | undefined) => {
-  if (!user || (user.role !== 'client' && user.role !== 'PASSENGER')) {
+  if (!user || user.role !== 'CLIENT') {
     throw new Error('Solo el cliente o un pasajero vinculado puede informar un pago')
   }
   const summaryId = BigInt(id)
@@ -366,11 +379,12 @@ export const reportPayment = async (id: string, user: AuthUser | undefined) => {
   if (summary.status !== 'sent') {
     throw new Error('Solo se puede informar el pago de un resumen enviado')
   }
-  return prisma.summaries.update({
+  const updated = await prisma.summaries.update({
     where: { id: summaryId },
     data: { status: 'payment_reported' },
     include: summaryInclude,
   })
+  return toWireSummary(updated)
 }
 
 export const rejectPayment = async (id: string, user: AuthUser | undefined) => {
@@ -382,11 +396,12 @@ export const rejectPayment = async (id: string, user: AuthUser | undefined) => {
   if (!user) throw new Error('No tienes permisos para rechazar pagos')
   await requireFullAccess(user, summary.client_id, 'rechazar pagos de este resumen')
   if (summary.status !== 'payment_reported') throw new Error('Solo se puede rechazar un pago informado')
-  return prisma.summaries.update({
+  const updated = await prisma.summaries.update({
     where: { id: BigInt(id) },
     data: { status: 'sent' },
     include: summaryInclude,
   })
+  return toWireSummary(updated)
 }
 
 export const confirmPayment = async (id: string, dto: CreateSummaryPaymentDTO, user: AuthUser | undefined) => {
@@ -487,7 +502,7 @@ export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user:
     return s
   })
 
-  return updatedSummary
+  return toWireSummary(updatedSummary)
 }
 
 // ─── Preview del período activo ───────────────────────────────────────────────
@@ -495,7 +510,7 @@ export const paySummary = async (id: string, dto: CreateSummaryPaymentDTO, user:
 
 export const previewBillingPeriod = async (clientId: string, referenceDate: string | undefined, user: AuthUser) => {
   await requireReadAccess(user, BigInt(clientId), 'ver la facturación de este cliente')
-  const client = await prisma.clients.findUnique({
+  const client = await prisma.passenger.findUnique({
     where: { id: BigInt(clientId) },
     select: {
       nombre: true,

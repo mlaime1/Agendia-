@@ -9,10 +9,10 @@ jest.mock('../../../../src/config/prisma', () => ({
       delete: jest.fn(),
       count: jest.fn(),
     },
-    clients: {
+    passenger: {
       findUnique: jest.fn(),
     },
-    client_passengers: {
+    passenger_client_access: {
       findUnique: jest.fn(),
     },
     trips: {
@@ -73,7 +73,7 @@ describe('summaries/service', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(require('../../../../src/utils/calendarAuth').getClientAccessLevel as jest.Mock).mockResolvedValue('full')
-    mockPrisma.clients.findUnique.mockResolvedValue({ driver_id: BigInt(1) })
+    mockPrisma.passenger.findUnique.mockResolvedValue({ driver_id: BigInt(1) })
   })
 
   describe('getAllByClient', () => {
@@ -227,7 +227,7 @@ describe('summaries/service', () => {
       }))
     })
     it('should use the client assigned driver instead of body driver_id', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue({ driver_id: BigInt(99) })
+      mockPrisma.passenger.findUnique.mockResolvedValue({ driver_id: BigInt(99) })
       mockPrisma.trips.findMany.mockResolvedValue([
         { id: BigInt(1), final_price: 1000, paid_amount: 0 },
       ])
@@ -283,7 +283,7 @@ describe('summaries/service', () => {
 
   describe('createSummaryAuto', () => {
     it('should throw if client not found', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue(null)
+      mockPrisma.passenger.findUnique.mockResolvedValue(null)
 
       await expect(
         createSummaryAuto('999', { driver_id: '1' }, adminUser)
@@ -291,7 +291,7 @@ describe('summaries/service', () => {
     })
 
     it('should throw if client has no billing_cycle', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue({
+      mockPrisma.passenger.findUnique.mockResolvedValue({
         billing_cycle: null,
         billing_day: null,
         billing_start_date: null,
@@ -303,7 +303,7 @@ describe('summaries/service', () => {
     })
 
     it('should throw if duplicate summary exists', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue({
+      mockPrisma.passenger.findUnique.mockResolvedValue({
         billing_cycle: 'monthly',
         billing_day: 1,
         billing_start_date: null,
@@ -408,7 +408,7 @@ describe('summaries/service', () => {
   })
 
   describe('payment report workflow', () => {
-    const clientUser = { authId: 'client-auth', role: 'client' as const, dbId: BigInt(5) }
+    const clientUser = { authId: 'client-auth', role: 'CLIENT' as const, dbId: BigInt(5) }
     const adminUser = { authId: 'admin-auth', role: 'ADMIN' as const, dbId: BigInt(1) }
 
     it('allows the owning client to report only a sent summary', async () => {
@@ -470,13 +470,13 @@ describe('summaries/service', () => {
 
   describe('previewBillingPeriod', () => {
     it('should throw if client not found', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue(null)
+      mockPrisma.passenger.findUnique.mockResolvedValue(null)
 
        await expect(previewBillingPeriod('999', undefined, adminUser)).rejects.toThrow('Cliente no encontrado')
     })
 
     it('should throw if client has no billing cycle', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue({
+      mockPrisma.passenger.findUnique.mockResolvedValue({
         nombre: 'Client',
         billing_cycle: null,
         billing_day: null,
@@ -487,7 +487,7 @@ describe('summaries/service', () => {
     })
 
     it('should return preview with available trips count', async () => {
-      mockPrisma.clients.findUnique.mockResolvedValue({
+      mockPrisma.passenger.findUnique.mockResolvedValue({
         nombre: 'Test Client',
         billing_cycle: 'monthly',
         billing_day: 1,

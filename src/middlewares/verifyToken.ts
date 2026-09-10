@@ -6,8 +6,9 @@ import { prisma } from '../config/prisma'  // ← ajustá el path
 export interface AuthRequest extends Request {
   user?: {
     authId: string
-    role: $Enums.Role | 'client'
+    role: $Enums.Role
     dbId: bigint
+    passengerId?: bigint
     phone?: string
   }
 }
@@ -45,8 +46,8 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
     return next()
   }
 
-  // Buscar en clients con Prisma
-  const dbClient = await prisma.clients.findUnique({
+  // Buscar en passenger con Prisma
+  const dbClient = await prisma.passenger.findUnique({
     where: { auth_id: user.id },
     select: { id: true }
   })
@@ -54,8 +55,9 @@ export async function verifyToken(req: AuthRequest, res: Response, next: NextFun
   if (dbClient) {
     req.user = {
       authId: user.id,
-      role: 'client',
+      role: 'CLIENT',
       dbId: dbClient.id,
+      passengerId: dbClient.id,
       phone,
     }
     return next()

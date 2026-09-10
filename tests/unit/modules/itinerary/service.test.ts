@@ -23,7 +23,7 @@ jest.mock('../../../../src/config/prisma', () => {
       delete: jest.fn(),
       deleteMany: jest.fn(),
     },
-    clients: {
+    passenger: {
       findMany: jest.fn(),
     },
     trips: {
@@ -71,14 +71,14 @@ describe('itinerary/service', () => {
       expect(result).toEqual(mockItineraries)
       expect(mockPrisma.routes.findMany).toHaveBeenCalledWith({
         where: { is_active: true },
-        include: { route_stops: true, rates: true, clients: true },
+        include: { route_stops: true, rates: true, passenger: true },
         orderBy: { name: 'asc' },
       })
     })
 
     it('should filter active itineraries by driver clients for DRIVER role', async () => {
       const mockItineraries = [{ id: BigInt(1) }]
-      mockPrisma.clients.findMany.mockResolvedValue([{ id: BigInt(5) }, { id: BigInt(6) }])
+      mockPrisma.passenger.findMany.mockResolvedValue([{ id: BigInt(5) }, { id: BigInt(6) }])
       mockPrisma.routes.findMany.mockResolvedValue(mockItineraries)
 
       const result = await itineraryService.getAll(driverUser)
@@ -91,7 +91,7 @@ describe('itinerary/service', () => {
             { client_id: { in: [BigInt(5), BigInt(6)] } },
           ],
         },
-        include: { route_stops: true, rates: true, clients: true },
+        include: { route_stops: true, rates: true, passenger: true },
         orderBy: { name: 'asc' },
       })
     })

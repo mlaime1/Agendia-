@@ -68,6 +68,17 @@ async function requireActiveRoute(id: bigint, context: string): Promise<void> {
   }
 }
 
+// Wire contract: the passenger relation is exposed as `clients`.
+function toWireRoute(route: any): any {
+  if (!route) return route
+  const { passenger, ...rest } = route
+  return { ...rest, clients: passenger }
+}
+
+function toWireRoutes(routes: any[]): any[] {
+  return routes.map(toWireRoute)
+}
+
 // ─── Itinerary CRUD ───────────────────────────────────────────────────────────
 
 export const itineraryService = {
@@ -75,19 +86,20 @@ export const itineraryService = {
     const baseWhere = { is_active: true }
 
     if (!user) {
-      return prisma.routes.findMany({
+      const routes = await prisma.routes.findMany({
         where: baseWhere,
-        include: { route_stops: true, rates: true, clients: true },
+        include: { route_stops: true, rates: true, passenger: true },
         orderBy: { name: 'asc' },
       })
+      return toWireRoutes(routes)
     }
 
     if (user.role === 'DRIVER') {
-      const clientIds = await prisma.clients.findMany({
+      const clientIds = await prisma.passenger.findMany({
         where: { driver_id: user.dbId },
         select: { id: true },
       })
-      return prisma.routes.findMany({
+      const routes = await prisma.routes.findMany({
         where: {
           AND: [
             baseWhere,
@@ -98,16 +110,18 @@ export const itineraryService = {
             },
           ],
         },
-        include: { route_stops: true, rates: true, clients: true },
+        include: { route_stops: true, rates: true, passenger: true },
         orderBy: { name: 'asc' },
       })
+      return toWireRoutes(routes)
     }
 
-    return prisma.routes.findMany({
+    const routes = await prisma.routes.findMany({
       where: baseWhere,
-      include: { route_stops: true, rates: true, clients: true },
+      include: { route_stops: true, rates: true, passenger: true },
       orderBy: { name: 'asc' },
     })
+    return toWireRoutes(routes)
   },
 
   async getById(id: string, user?: AuthUser) {
@@ -118,7 +132,7 @@ export const itineraryService = {
       include: {
         route_stops: { orderBy: { stop_order: 'asc' } },
         rates: true,
-        clients: true,
+        passenger: true,
       },
     })
 
@@ -131,20 +145,21 @@ export const itineraryService = {
       }
     }
 
-    return route
+    return toWireRoute(route)
   },
 
   async create(dto: CreateItineraryDto, user?: AuthUser) {
     const clientId = BigInt(dto.client_id)
     await requireFullAccess(user, clientId, 'crear itinerarios')
 
-    return prisma.routes.create({
+    const route = await prisma.routes.create({
       data: {
         name: dto.name,
         client_id: clientId,
       },
-      include: { route_stops: true, rates: true, clients: true },
+      include: { route_stops: true, rates: true, passenger: true },
     })
+    return toWireRoute(route)
   },
 
   async update(id: string, dto: UpdateItineraryDto, user?: AuthUser) {
@@ -154,13 +169,14 @@ export const itineraryService = {
     }
     await requireActiveRoute(BigInt(id), 'editar')
 
-    return prisma.routes.update({
+    const route = await prisma.routes.update({
       where: { id: BigInt(id) },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
       },
-      include: { route_stops: true, rates: true, clients: true },
+      include: { route_stops: true, rates: true, passenger: true },
     })
+    return toWireRoute(route)
   },
 
   async remove(id: string, user?: AuthUser) {

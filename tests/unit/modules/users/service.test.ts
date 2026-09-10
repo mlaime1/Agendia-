@@ -5,10 +5,10 @@ jest.mock('../../../../src/config/prisma', () => ({
       update: jest.fn(),
       findMany: jest.fn(),
     },
-    clients: {
+    passenger: {
       findUnique: jest.fn(),
     },
-    client_passengers: {
+    passenger_client_access: {
       findMany: jest.fn(),
     },
   },
@@ -58,7 +58,7 @@ describe('users/service', () => {
     it('should return client profile when auth_id matches a client', async () => {
       mockPrisma.users.findUnique.mockResolvedValue(null)
       const mockClient = { id: BigInt(10), nombre: 'Test Client' }
-      mockPrisma.clients.findUnique.mockResolvedValue(mockClient)
+      mockPrisma.passenger.findUnique.mockResolvedValue(mockClient)
 
       const result = await getMe('auth-client-123')
 
@@ -72,19 +72,19 @@ describe('users/service', () => {
       })
     })
 
-    it('should return PASSENGER profile with linked clients', async () => {
+    it('should return CLIENT profile with linked clients', async () => {
       const mockUser = {
         id: BigInt(10),
         name: 'Test Passenger',
         email: 'pass@test.com',
         alias: null,
-        role: 'PASSENGER',
+        role: 'CLIENT',
       }
       mockPrisma.users.findUnique.mockResolvedValue(mockUser)
-      mockPrisma.client_passengers.findMany.mockResolvedValue([
+      mockPrisma.passenger_client_access.findMany.mockResolvedValue([
         {
-          client_id: BigInt(5),
-          client: { nombre: 'Client A', driver_id: BigInt(1) },
+          passenger_id: BigInt(5),
+          passenger: { nombre: 'Client A', driver_id: BigInt(1) },
         },
       ])
 
@@ -92,6 +92,7 @@ describe('users/service', () => {
 
       expect(result).toEqual({
         ...mockUser,
+        role: 'PASSENGER',
         phone: null,
         type: 'passenger',
         clients: [
@@ -102,7 +103,7 @@ describe('users/service', () => {
 
     it('should throw if user not found', async () => {
       mockPrisma.users.findUnique.mockResolvedValue(null)
-      mockPrisma.clients.findUnique.mockResolvedValue(null)
+      mockPrisma.passenger.findUnique.mockResolvedValue(null)
 
       await expect(getMe('auth-nonexistent')).rejects.toThrow('Usuario no encontrado')
     })
@@ -176,7 +177,7 @@ describe('users/service', () => {
 
     it('should reject clients without touching Supabase or Prisma', async () => {
       await expect(
-        updateMe(BigInt(1), 'auth-123', 'client', { name: 'Client Name', phone: '1122334455' })
+        updateMe(BigInt(1), 'auth-123', 'CLIENT', { name: 'Client Name', phone: '1122334455' })
       ).rejects.toThrow('Los clientes no pueden editar su perfil con este endpoint')
 
       expect(mockSupabase.auth.admin.updateUserById).not.toHaveBeenCalled()

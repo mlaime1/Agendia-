@@ -77,12 +77,12 @@ async function registerPassenger({ email, password, name, invitation_code, phone
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.users.upsert({
       where: { auth_id: data.user!.id },
-      update: { role: 'PASSENGER', name: profileName, email },
+      update: { role: 'CLIENT', name: profileName, email },
       create: {
         auth_id: data.user!.id,
         name: profileName,
         email,
-        role: 'PASSENGER',
+        role: 'CLIENT',
       },
     })
 
@@ -91,22 +91,24 @@ async function registerPassenger({ email, password, name, invitation_code, phone
     if (invitation.client_id) {
       clientId = invitation.client_id
     } else {
-      const newClient = await tx.clients.create({
+      const newClient = await tx.passenger.create({
         data: {
           nombre: name,
           phone: phone ?? '0',
           billing_cycle: 'monthly',
           billing_day: 1,
           driver_id: invitation.driver_id,
+          // Self-management link: the registering account owns this passenger.
+          auth_id: data.user!.id,
         },
       })
       clientId = newClient.id
     }
 
-    await tx.client_passengers.create({
+    await tx.passenger_client_access.create({
       data: {
-        client_id: clientId,
-        user_id: user.id,
+        passenger_id: clientId,
+        client_user_id: user.id,
       },
     })
 
