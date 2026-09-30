@@ -57,6 +57,18 @@ async function requireFullAccess(
   }
 }
 
+async function requireReadAccess(
+  user: AuthUser | undefined,
+  clientId: bigint,
+  context: string,
+): Promise<void> {
+  if (!user) return
+  const level = await getClientAccessLevel(user, clientId)
+  if (level === 'none') {
+    throw new AppError(`No tienes permisos para ${context}`, 403)
+  }
+}
+
 async function requireActiveRoute(id: bigint, context: string): Promise<void> {
   const route = await prisma.routes.findUnique({
     where: { id },
@@ -222,7 +234,7 @@ export const itineraryService = {
 
     const clientId = await getClientIdForItinerary(BigInt(itineraryId))
     if (clientId) {
-      await requireFullAccess(user, clientId, 'ver paradas')
+      await requireReadAccess(user, clientId, 'ver paradas')
     }
 
     return prisma.route_stops.findMany({
@@ -296,7 +308,7 @@ export const itineraryService = {
 
     const clientId = await getClientIdForItinerary(BigInt(itineraryId))
     if (clientId) {
-      await requireFullAccess(user, clientId, 'ver tarifas')
+      await requireReadAccess(user, clientId, 'ver tarifas')
     }
 
     return prisma.rates.findMany({
