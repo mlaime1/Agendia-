@@ -119,16 +119,9 @@ const addDays = (d: Date, n: number): Date => {
 
 En el futuro, si se requiere que el cierre de un período respete la medianoche del cliente, se debe usar `clients.timezone` para calcular el límite UTC correspondiente.
 
-### 3.5. Scheduler automático (node-cron)
+### 3.5. Scheduler de resúmenes (retirado)
 
-```typescript
-// src/modules/summaries/scheduler.ts
-cron.schedule('0 1 * * *', async () => {
-  // Ejecuta todos los días a la 1:00 AM del servidor
-  // Actualmente sin ajuste de zona horaria.
-  // Futuro: iterar clientes y calcular "1:00 AM local de cada cliente".
-})
-```
+La generación automática de resúmenes fue retirada; el backend ya no programa un cierre diario.
 
 ---
 
@@ -158,7 +151,7 @@ Se utilizan **identificadores IANA**, por ejemplo:
 - **Se valida como IANA** al momento de guardar (`isValidIANA`). Si se envía un valor inválido, el backend devuelve `400`.
 - **Se usa para convertir `trip_date`** al crear o actualizar un viaje. El backend busca el `timezone` del cliente y convierte la fecha local del cliente a UTC antes de guardar.
 - **Se expone en la API** como parte del objeto `client`.
-- **Futuro:** se usará para `pickup_time`/`return_time`, cálculo de períodos de facturación, y scheduler de resúmenes.
+- **Futuro:** se usará para `pickup_time`/`return_time` y cálculo de períodos de facturación.
 
 ### 4.4. Implementación de `trip_date`
 
@@ -255,7 +248,6 @@ prisma/migrations/20260612205931_add_timezone_and_trip_date_timestamptz/
 - [x] Validar `clients.timezone` con `isValidIANA` antes de guardar.
 - [x] Convertir `trip_date` de `YYYY-MM-DD` local del cliente a UTC usando `toUTC()` antes de persistir.
 - [ ] Convertir `pickup_time`/`return_time` usando `clients.timezone` en lugar de asumir UTC (futuro).
-- [ ] Usar `clients.timezone` en el scheduler de resúmenes para cerrar períodos a medianoche local (futuro).
 
 ### Frontend
 - [x] Al mostrar fechas/horas, usar `clients.timezone` para convertir desde UTC.

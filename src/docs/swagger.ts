@@ -560,15 +560,6 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         responses: { 201: { description: 'Resumen creado' } },
       },
     },
-    '/summaries/auto/{clientId}': {
-      post: {
-        tags: ['Summaries'],
-        summary: 'Crear resumen automático según config de facturación del cliente',
-        security: [{ bearerAuth: [] }],
-        parameters: [{ in: 'path', name: 'clientId', required: true, schema: { type: 'string' } }],
-        responses: { 201: { description: 'Resumen creado' } },
-      },
-    },
     '/summaries/preview/{clientId}': {
       get: {
         tags: ['Summaries'],

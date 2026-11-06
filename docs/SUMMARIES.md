@@ -2,10 +2,7 @@
 
 ## Propósito
 
-El módulo **Summaries** permite agrupar viajes en períodos de facturación y generar un PDF de resumen/cobro. Soporta dos modalidades:
-
-- **Resumen manual**: el chofer elige el rango de fechas libremente.
-- **Resumen automático**: el sistema calcula el período según la configuración de facturación del cliente (semanal, quincenal, mensual).
+El módulo **Summaries** permite agrupar viajes en períodos de facturación y generar un PDF de resumen/cobro. Los resúmenes se crean manualmente: el chofer elige el rango de fechas libremente.
 
 Cada resumen puede estar parcialmente pagado, totalmente pagado o sin pagar.
 
@@ -148,15 +145,9 @@ Content-Type: application/json
 
 ---
 
-## Diferencia entre manual y automático
+## Creación de resúmenes
 
-| | Manual | Automático |
-|--|--------|------------|
-| Endpoint | `POST /summaries` | `POST /summaries/auto/:clientId` |
-| Rango de fechas | Lo define el usuario | Lo calcula el sistema |
-| `period_type` | Libre (`manual`, etc.) | Viene del `billing_cycle` del cliente |
-| Requiere `billing_start_date` | ❌ No | ✅ Sí, para quincenal |
-| Preview disponible | No | `GET /summaries/preview/:clientId` |
+La creación automática está retirada: el backend ya no inicia el scheduler diario y `POST /summaries/auto/:clientId` ya no está disponible. Usá `POST /summaries` para crear un resumen manual con un rango de fechas libre. `GET /summaries/preview/:clientId` sigue disponible para consultar el período de facturación calculado.
 
 ---
 
@@ -223,10 +214,6 @@ Content-Type: application/json
 2. Se registra el pago completo: `POST /payments/trip/:id` con `amount = final_price`.
 3. Se crea el summary manual. Como el viaje ya está `paid`, el summary se crea directamente en estado `paid`.
 
-### Escenario C: Facturación semanal automática
-1. El cliente tiene `billing_cycle: 'weekly'` y `billing_day: 1` (lunes).
-2. El scheduler o el chofer usa `POST /summaries/auto/:clientId`.
-3. El sistema calcula la semana cerrada más reciente y agrupa los viajes.
 
 ---
 

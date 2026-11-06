@@ -58,9 +58,9 @@ docs/
 ---
 
 ### 3.2 Cierre de Período / Abono (Resumen)
-**Ruta:** `POST /summaries` (manual) o `/summaries/auto/:clientId` (automático)
+**Ruta:** `POST /summaries` (manual)
 
-**Controlador:** `src/modules/summaries/controller.ts` → `createManual` o `createAuto`
+**Controlador:** `src/modules/summaries/controller.ts` → `createManual`
 
 **Servicio:** `src/modules/summaries/service.ts` → `createSummaryManual` → `createSummary`
 - Recibe `from`, `to`, IDs
