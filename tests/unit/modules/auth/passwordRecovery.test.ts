@@ -184,6 +184,19 @@ describe('auth/service requestPasswordRecovery', () => {
     expect(result.message).toBe(GENERIC_MESSAGE)
   })
 
+  it('lets the user retry after a failed delivery', async () => {
+    mockPrisma.users.findFirst.mockResolvedValue({ id: BigInt(7), auth_id: 'auth-uuid-7' })
+    mockSendMail.mockRejectedValueOnce(new Error('smtp down'))
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    await requestPasswordRecovery({ email: 'retry@mail.com' })
+    const retried = await requestPasswordRecovery({ email: 'retry@mail.com' })
+    errorSpy.mockRestore()
+
+    expect(retried).toEqual({ message: GENERIC_MESSAGE })
+    expect(mockSupabase.auth.admin.updateUserById).toHaveBeenCalledTimes(1)
+  })
+
   it('does not surface auth errors and releases the cooldown', async () => {
     mockPrisma.users.findFirst.mockResolvedValue({ id: BigInt(6), auth_id: 'auth-uuid-6' })
     mockSupabase.auth.admin.updateUserById.mockResolvedValue({

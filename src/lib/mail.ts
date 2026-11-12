@@ -20,7 +20,7 @@ function getTransporter(): Transporter {
     const hasCredentials = Boolean(env.mail.smtp.user)
 
     transporter = nodemailer.createTransport({
-      host: env.mail.smtp.host,
+      host: env.mail.smtp.host?.trim(),
       port: env.mail.smtp.port,
       secure: env.mail.smtp.secure,
       // With credentials, refuse to authenticate over a plaintext channel.
@@ -49,7 +49,7 @@ export const smtpTransport: MailTransport = {
  * replace a password with a value that never left the server.
  */
 export function resolveTransport(): MailTransport {
-  if (!env.mail.smtp.host) {
+  if (!env.mail.smtp.host?.trim()) {
     throw new AppError(
       'SMTP_HOST no está configurado: no se puede enviar el mail de recuperación',
       500
