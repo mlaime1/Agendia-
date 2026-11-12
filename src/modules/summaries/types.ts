@@ -7,12 +7,6 @@ export interface CreateSummaryManualDTO {
   notes?: string
 }
 
-export interface CreateSummaryAutoDTO {
-  driver_id: string
-  reference_date?: string // YYYY-MM-DD — opcional, default: hoy
-  notes?: string
-}
-
 export interface UpdateSummaryStatusDTO {
   status: 'draft' | 'sent' | 'paid' | 'archived' | 'partial' | 'payment_reported'
 }

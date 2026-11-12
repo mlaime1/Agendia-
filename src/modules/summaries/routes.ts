@@ -8,7 +8,6 @@ router.use(verifyToken)
 
 // Crear
 router.post('/', controller.createManual)                          // manual: body con period_start y period_end
-router.post('/auto/:clientId', controller.createAuto)              // automático: calcula el período según config del cliente
 
 // Preview — ver el período que se generaría antes de confirmar
 router.get('/preview/:clientId', controller.preview)               // ?date=YYYY-MM-DD (opcional)

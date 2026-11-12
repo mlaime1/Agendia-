@@ -2,7 +2,6 @@ import 'dotenv/config';
 import { app } from './app';
 import { env } from './config/env';
 import { prisma } from './config/prisma';
-import { startSummaryScheduler } from './modules/summaries/scheduler';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -31,4 +30,3 @@ const startServer = async (): Promise<void> => {
 };
 
 startServer();
-startSummaryScheduler();

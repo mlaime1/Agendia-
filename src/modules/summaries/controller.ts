@@ -14,17 +14,6 @@ export const createManual = async (req: AuthRequest, res: Response) => {
   }
 }
 
-export const createAuto = async (req: AuthRequest, res: Response) => {
-  try {
-    const clientId = req.params.clientId as string
-    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' })
-    const summary = await service.createSummaryAuto(clientId, req.body, req.user)
-    res.status(201).json({ success: true, data: summary })
-  } catch (error: any) {
-    res.status(error?.statusCode ?? 400).json({ success: false, message: error.message })
-  }
-}
-
 export const preview = async (req: AuthRequest, res: Response) => {
   try {
     const clientId = req.params.clientId as string

@@ -53,7 +53,6 @@ jest.mock('../../../../src/utils/calendarAuth', () => ({
 
 import {
   createSummaryManual,
-  createSummaryAuto,
   getAllByClient,
   getById,
   updateStatus,
@@ -278,41 +277,6 @@ describe('summaries/service', () => {
          period_end: '2025-06-01',
          }, adminUser)
       ).rejects.toThrow('No hay viajes sin resumen')
-    })
-  })
-
-  describe('createSummaryAuto', () => {
-    it('should throw if client not found', async () => {
-      mockPrisma.passenger.findUnique.mockResolvedValue(null)
-
-      await expect(
-        createSummaryAuto('999', { driver_id: '1' }, adminUser)
-      ).rejects.toThrow('Cliente no encontrado')
-    })
-
-    it('should throw if client has no billing_cycle', async () => {
-      mockPrisma.passenger.findUnique.mockResolvedValue({
-        billing_cycle: null,
-        billing_day: null,
-        billing_start_date: null,
-      })
-
-      await expect(
-        createSummaryAuto('1', { driver_id: '1' }, adminUser)
-      ).rejects.toThrow('no tiene configurado un ciclo de facturación')
-    })
-
-    it('should throw if duplicate summary exists', async () => {
-      mockPrisma.passenger.findUnique.mockResolvedValue({
-        billing_cycle: 'monthly',
-        billing_day: 1,
-        billing_start_date: null,
-      })
-      mockPrisma.summaries.findFirst.mockResolvedValue({ id: BigInt(10) })
-
-      await expect(
-        createSummaryAuto('1', { driver_id: '1' }, adminUser)
-      ).rejects.toThrow('Ya existe un resumen para este período')
     })
   })
 

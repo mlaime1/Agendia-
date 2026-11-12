@@ -42,3 +42,12 @@ export async function refresh(req: Request, res: Response) {
     res.status(401).json({ success: false, message: error.message })
   }
 }
+
+export async function passwordRecovery(req: Request, res: Response) {
+  try {
+    const data = await authService.requestPasswordRecovery(req.body, req.ip)
+    res.status(200).json({ success: true, data })
+  } catch (error: any) {
+    res.status(error.statusCode ?? 400).json({ success: false, message: error.message })
+  }
+}
