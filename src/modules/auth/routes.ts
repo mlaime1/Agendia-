@@ -8,5 +8,6 @@ router.post('/register', authController.register)
 router.post('/login', authController.login)
 router.post('/logout', verifyToken, authController.logout)
 router.post('/refresh', authController.refresh)
+router.post('/password-recovery', authController.passwordRecovery)
 
 export default router

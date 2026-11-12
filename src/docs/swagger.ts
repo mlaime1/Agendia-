@@ -46,6 +46,13 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
           password: { type: 'string', format: 'password', example: 'MiPass123!' },
         },
       },
+      PasswordRecoveryDTO: {
+        type: 'object',
+        required: ['email'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'chofer@mail.com' },
+        },
+      },
       RefreshDTO: {
         type: 'object',
         required: ['refresh_token'],
@@ -359,6 +366,25 @@ const swaggerDefinition: swaggerJsdoc.Options['definition'] = {
         responses: {
           200: { description: 'Sesión iniciada' },
           401: { description: 'Credenciales inválidas' },
+        },
+      },
+    },
+    '/auth/password-recovery': {
+      post: {
+        tags: ['Auth'],
+        summary: 'Enviar una contraseña temporal por correo',
+        description:
+          'Responde lo mismo exista o no la cuenta. La contraseña temporal reemplaza la actual; el usuario debe cambiarla desde la app.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/PasswordRecoveryDTO' } },
+          },
+        },
+        responses: {
+          200: { description: 'Pedido aceptado (respuesta genérica, sin revelar si el correo existe)' },
+          400: { description: 'Correo inválido' },
+          429: { description: 'Pedido repetido dentro del cooldown por correo' },
         },
       },
     },
