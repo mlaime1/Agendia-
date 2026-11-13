@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "Clean Express + TypeScript + Prisma backend scaffold",
   "main": "dist/server.js",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc",
+    "heroku-postbuild": "npm prune --omit=dev --omit=optional --ignore-scripts",
     "start": "node dist/server.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "jest --testPathPatterns=unit",
@@ -23,6 +27,7 @@
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "@supabase/supabase-js": "^2.105.4",
     "cors": "^2.8.5",
     "date-fns": "^4.4.0",
@@ -38,7 +43,6 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "@prisma/client": "^7.8.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
