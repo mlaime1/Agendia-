@@ -14,8 +14,8 @@ S4. The user clarified: “la bd de supabase tiene datos ya andando, no hay que 
 
 ## Tasks
 
-T1 | S1,S4 | Inline: update runtime/build dependency placement and post-build prune hook; do not add migration execution | commit pending
-T2 | S1,S4 | Verify production prune preserves generated client/runtime imports and run focused checks without database writes | commit pending
+T1 | S1,S4 | Inline: update runtime/build dependency placement and post-build prune hook; do not add migration execution | `0a554ba`
+T2 | S1,S4 | Verify production prune preserves generated client/runtime imports and run focused checks without database writes | `0a554ba`
 T3 | S3 | Explain the CLI/runtime distinction in the final response | no code commit
 
 ## Log
