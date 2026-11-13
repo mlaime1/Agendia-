@@ -17,48 +17,25 @@ function toWireTrips(trips: any[]): any[] {
   return trips.map(toWireTrip);
 }
 
-async function findOrCreateRateForTrip(client_id: bigint, route_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
-  // 1. Look for rate specific to this route
-  let rate = await prisma.rates.findFirst({
-    where: {
-      client_id,
-      route_id,
-      trip_type: trip_type as any,
-    },
-    select: { id: true, base_price: true },
+async function findRateForTrip(route_id: bigint, trip_type: string): Promise<{ id: bigint; base_price: number }> {
+  // The agreed price belongs to the route and the trip type: exactly one row is
+  // the agreement. Never insert here — creating a rate inside a trip request
+  // silently poisoned the price catalog with zero-price rows.
+  const rates = await prisma.rates.findMany({
+    where: { route_id, trip_type: trip_type as any },
+    select: { id: true, base_price: true, created_at: true },
+    orderBy: { created_at: 'asc' },
   });
 
-  if (rate) {
-    return { id: rate.id, base_price: Number(rate.base_price) };
+  if (rates.length === 0) {
+    throw new AppError('No hay tarifa configurada para esta ruta', 400);
   }
 
-  // 2. Fallback: look for a general rate for this client (without route_id)
-  rate = await prisma.rates.findFirst({
-    where: {
-      client_id,
-      route_id: null,
-      trip_type: trip_type as any,
-    },
-    select: { id: true, base_price: true },
-  });
+  // Rows left behind by the old auto-create path can duplicate the key.
+  // The agreement is the priced one; a zero-price duplicate is garbage.
+  const rate = rates.find((candidate) => Number(candidate.base_price) > 0) ?? rates[0];
 
-  if (rate) {
-    return { id: rate.id, base_price: Number(rate.base_price) };
-  }
-
-  // 3. Create a new rate for this specific route
-  const newRate = await prisma.rates.create({
-    data: {
-      client_id,
-      route_id,
-      trip_type: trip_type as any,
-      base_price: 0,
-      start_date: new Date(),
-    },
-    select: { id: true, base_price: true },
-  });
-
-  return { id: newRate.id, base_price: Number(newRate.base_price) };
+  return { id: rate.id, base_price: Number(rate.base_price) };
 }
 
 function requireAuth(user: AuthUser | undefined): AuthUser {
@@ -242,13 +219,16 @@ export const tripService = {
         })
         if (!rate) throw new AppError('Tarifa no encontrada', 404)
         assertClientOwnership(rate.client_id, client_id, 'La tarifa')
+        if (rate.route_id == null || BigInt(rate.route_id) !== route_id) {
+          throw new AppError('La tarifa no pertenece a esta ruta', 400)
+        }
 
         rate_id = rate.id
         const basePrice = Number(rate.base_price)
         const surcharge = data.has_surcharge && rate.surcharge_price ? Number(rate.surcharge_price) : 0
         final_price = data.final_price ?? (basePrice + surcharge)
       } else {
-        const rateData = await findOrCreateRateForTrip(client_id, route_id, trip_type)
+        const rateData = await findRateForTrip(route_id, trip_type)
         rate_id = rateData.id
         final_price = rateData.base_price
       }
@@ -309,6 +289,7 @@ export const tripService = {
     let route_id: bigint | null | undefined = undefined
     let rate_id: bigint | null | undefined = undefined
     let special_type: string | null | undefined = undefined
+    let recalculatedFinalPrice: number | undefined = undefined
 
     if (newTripType === 'especial') {
       // Los viajes especiales no tienen ruta ni tarifa asociada
@@ -341,11 +322,26 @@ export const tripService = {
       }
 
       route_id = targetRouteId
-      rate_id = data.rate_id ? BigInt(data.rate_id) : trip.rate_id
-      if (rate_id !== null && rate_id !== undefined) {
-        const rate = await prisma.rates.findUnique({ where: { id: rate_id } })
+
+      const tripTypeChanged = newTripType !== trip.trip_type
+      const routeChanged = trip.route_id == null || BigInt(trip.route_id) !== targetRouteId
+
+      if (data.rate_id) {
+        const rate = await prisma.rates.findUnique({ where: { id: BigInt(data.rate_id) } })
         if (!rate) throw new AppError('Tarifa no encontrada', 404)
         assertClientOwnership(rate.client_id, trip.client_id, 'La tarifa')
+        if (rate.route_id == null || BigInt(rate.route_id) !== targetRouteId) {
+          throw new AppError('La tarifa no pertenece a esta ruta', 400)
+        }
+        rate_id = rate.id
+      } else if (tripTypeChanged || routeChanged) {
+        const resolvedRate = await findRateForTrip(targetRouteId, newTripType)
+        rate_id = resolvedRate.id
+        if (data.final_price === undefined) {
+          recalculatedFinalPrice = resolvedRate.base_price
+        }
+      } else {
+        rate_id = trip.rate_id ?? undefined
       }
       special_type = null
     }
@@ -355,7 +351,11 @@ export const tripService = {
       data: {
         ...(data.trip_date    && { trip_date: toUTC(data.trip_date, client.timezone) }),
         ...(data.trip_type    !== undefined && { trip_type: newTripType }),
-        ...(data.final_price  !== undefined && { final_price: data.final_price }),
+        ...(data.final_price !== undefined
+          ? { final_price: data.final_price }
+          : recalculatedFinalPrice !== undefined
+            ? { final_price: recalculatedFinalPrice }
+            : {}),
         ...(data.has_surcharge !== undefined && { has_surcharge: data.has_surcharge }),
         ...(data.surcharge_reason !== undefined && { surcharge_reason: data.surcharge_reason }),
         ...(special_type      !== undefined && { special_type }),
